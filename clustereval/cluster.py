@@ -112,10 +112,10 @@ class Cluster:
             new_edgelist = list(edge_list_copy_array[strong_locs])
             sim_list_new = list(sim_list_array[strong_locs])
 
-            graph = ig.Graph(n=n_elements, edges=list(new_edgelist),
+            nn_graph = ig.Graph(n=n_elements, edges=list(new_edgelist),
                             edge_attrs={'weight': sim_list_new})
             # print('Share of edges kept after Global Pruning %.2f' % (len(strong_locs) / len(sim_list)), '%')
-        self.nn_graph = graph
+        self.nn_graph = nn_graph
         return
 
 
