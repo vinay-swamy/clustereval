@@ -1,9 +1,9 @@
-import setuptools
+from setuptools import find_packages, setup
 
 with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
-setuptools.setup(
+setup(
     name="clustereval", # Replace with your own username
     version="0.0.1",
     author="Vinay Swamy",
@@ -16,6 +16,7 @@ setuptools.setup(
         "Bug Tracker": "https://github.com/vinay-swamy/clustereval/issues",
     },
     python_requires=">=3.6",
+    packages=find_packages(),
     setup_requires=['numpy', 'pybind11'],
     install_requires=['pybind11', 'numpy', 'scipy', 'pandas', 'hnswlib', 'python-igraph', 'leidenalg>=0.7.0', 'louvain'],
     classifiers=[
