@@ -1,3 +1,4 @@
+#%%
 import pandas as pd
 import numpy as np 
 import glob
@@ -39,6 +40,8 @@ def run_purity_calc(tup):
     #try:
     ref_dict=tup[0]
     query_dict_list=tup[1]
+    runname = tup[2]
+    ri = {runname : list(ref_dict.keys())}
     all_ref_cluster_purities = []
     for ref_cluster in ref_dict.keys():
         ref_cluster_purities = [None] * len(query_dict_list)
@@ -47,5 +50,8 @@ def run_purity_calc(tup):
             ref_cluster_purities[i] = purity_k(ref_dict[ref_cluster], ref_cluster, query_dict)
             i+=1
         all_ref_cluster_purities.append(np.asarray(ref_cluster_purities))
+    
     return pd.DataFrame([sum_omit_nan(x) for x in all_ref_cluster_purities ], 
-                        columns=["purity", 'n_exp_evaluated']).assign(cluster= list(ref_dict.keys()))
+                        columns=["purity", 'n_exp_evaluated']).assign(**ri)
+
+# %%

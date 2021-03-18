@@ -1,3 +1,4 @@
+#%%
 import pandas as pd
 import numpy as np 
 import glob
@@ -31,6 +32,7 @@ def calc_stability(tup):
     ref = tup[0]
     meta_df = tup[1]
     exp_df_list = tup[2]
+    runname = tup[3]
     # try:
     H_k_scores = np.asarray([
         [H_k(group[1], exp) for exp in exp_df_list] / meta_df['H_tot']
@@ -38,4 +40,5 @@ def calc_stability(tup):
     ]).sum(axis=1)
     H_k_scores = 1 - (H_k_scores / len(exp_df_list))
     clusters = [group[0] for group in ref.groupby("labels")]
-    return pd.DataFrame.from_dict({'clusters': clusters, 'H_k_scores': H_k_scores})
+    return pd.DataFrame.from_dict({runname: clusters, 'H_k_scores': H_k_scores})
+# %%
