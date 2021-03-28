@@ -3,22 +3,39 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::iter::FromIterator;
 use std::iter::Iterator;
-use ndarray::{array,Array2, s};
+use ndarray::{array,Array2, s, arr2};
 
 #[derive(Debug)]
-
 struct ClusterResults {
     barcodes:Vec<String>,
     labels: Vec<String> , 
     barcode_set:HashSet<String>,
-    grouped_barcodes: HashMap<String, HashSet<String>>
+    grouped_barcodes: HashMap<String, HashSet<String>>,
+    h_tot: f64
 }
 
-// struct ExperimentResults{
-//     exp_param :String,
-//     h_k_scores: &[f64]
-// }
+#[derive(Debug)]
+struct ExperimentResults{
+    exp_param :String,
+    cluster_ids : Vec<String>,
+    h_k_scores: Vec<f64>
+}
+impl ExperimentResults{
+    fn pprint(&self){
+        for i in 0..self.cluster_ids.len(){
+            println!("{},{}",&self.cluster_ids[i], &self.h_k_scores[i])
+        }
+    }
+}
 
+fn entropy(group_map: &HashMap<String, HashSet<String>>, labels:&Vec<String> ) -> f64{
+        let n = labels.len() as f64;
+        let res: f64 = group_map.values().map(|i|{
+            let p = i.len() as f64 /n;
+            p * p.ln()
+        }).sum();
+        return res * -1 as f64
+    }
 
 impl ClusterResults{
     fn new(barcodes:Vec<String>, labels: Vec<String>) -> ClusterResults{
@@ -41,33 +58,18 @@ impl ClusterResults{
             }
         }
         grouped_barcodes.insert(current_label.clone(), current_set);
-        ClusterResults{barcodes, labels, barcode_set, grouped_barcodes}
+        let h_tot = entropy(&grouped_barcodes, &labels);
+        ClusterResults{barcodes, labels, barcode_set, grouped_barcodes, h_tot}
     }
     fn head(&self){
         println!("{:?}", &self.barcodes[0..5]);
         println!("{:?}", &self.labels[0..5])
     }
-    fn entropy(&self) -> f64{
-        let mut freq_table: HashMap<String, usize>  = HashMap::new();
-        for label in self.labels.iter(){
-            if let Some(x)  = freq_table.get_mut(label){
-                *x = *x + 1  ;
-            } else{
-                freq_table.insert(label.clone() , 1);
-            }
-        }
-        let n = self.labels.len() as f64;
-        let res: f64 = freq_table.values().map(|i|{
-            let p = *i as f64 /n;
-            p * p.ln()
-        }).sum();
-
-        return res * -1 as f64
-    }
     
-    fn H_k(&self, query:&ClusterResults) -> f64{
-        let intersect: HashSet<String> = self.barcode_set.intersection(&query.barcode_set).cloned().collect::<HashSet<String>>();
-        println!("Helo{}" , intersect.len());
+}
+
+fn H_k(ref_bc: &HashSet<String>, query:&ClusterResults) -> f64{
+        let intersect: HashSet<String> = ref_bc.intersection(&query.barcode_set).cloned().collect::<HashSet<String>>();
         if intersect.len() == 0{
             return 0.0
         } else{
@@ -81,12 +83,10 @@ impl ClusterResults{
                     j+=1;
                 }
             }
-            return ClusterResults::new(new_bc, new_labels).entropy();
+            let new_clu = ClusterResults::new(new_bc, new_labels);
+            return entropy(&new_clu.grouped_barcodes, &new_clu.labels);
         }
     }
-}
-
-
 
 fn read_cluster_results( file: &str) ->ClusterResults {
     let file_string = fs::read_to_string(file).expect("Bad input file ");
@@ -101,21 +101,30 @@ fn read_cluster_results( file: &str) ->ClusterResults {
     ClusterResults::new(barcodes,labels)
 }
 
-// fn run_calculation(ref_cluster:&ClusterResults, query_clusters: &Vec<ClusterResults>, h_tot_scores: &[f64], exp_name: String) -> ExperimentResults{
+fn run_calculation(ref_cluster:&ClusterResults, query_clusters: &Vec<ClusterResults>, exp_param: &String) -> ExperimentResults{
+    let mut exp_result = Array2::<f64>::zeros(( ref_cluster.grouped_barcodes.len() ,query_clusters.len() ));
+    for (i, cluster) in ref_cluster.grouped_barcodes.values().enumerate(){
+        for (j,  experiment) in query_clusters.iter().enumerate() {
+            exp_result[[i, j]]= H_k(&cluster, &experiment) / experiment.h_tot ; 
+        }
 
-// }
+    }
+    let h_k_scores = exp_result.rows().into_iter().map(|x| 1.0 - x.mean().unwrap()).collect::<Vec<f64>>();
+    let cluster_ids: Vec<String> = ref_cluster.grouped_barcodes.keys().cloned().collect::<Vec<String>>() ;
+    let exp_param = exp_param.clone();
+    return ExperimentResults{ exp_param,cluster_ids, h_k_scores }
+}
 
 fn main() {
-    let k = read_cluster_results("test_sorted.csv");
-    //let j = read_cluster_results("query.csv");
-    let j:usize = k.grouped_barcodes.values().map(|x| x.len() ).sum();
-    let mut x : Vec<usize> = k.grouped_barcodes.values().map(|x| x.len() ).collect();
-    x.sort();
-    let m = k.barcodes.len();    
-    //let p = k.grouped_barcodes.get(&String::from("clu34"));
-    println!("{:?}", j);
-    println!("{:?}", m)
-    //println!(xv)
-    //println!("{:?}", k.)
-    //println!("{}", m)
+    let ref_clust = read_cluster_results("cluster_out/exp-0_resolution-0.6_knn-44_.csv");
+    let test_clusters :Vec<ClusterResults> = vec![
+        read_cluster_results("cluster_out/exp-0_resolution-0.7_knn-29_.csv"),
+        read_cluster_results("cluster_out/exp-0_resolution-0.8_knn-53_.csv"),
+        read_cluster_results("cluster_out/exp-0_resolution-0.9_knn-71_.csv"),
+        read_cluster_results("cluster_out/exp-0_resolution-1.0_knn-48_.csv"),
+    ];
+    let res = run_calculation(&ref_clust, &test_clusters, &String::from("smooby"));
+    res.pprint();
+
+
 }
