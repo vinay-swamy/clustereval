@@ -11,21 +11,23 @@ Motivation: Different clustering algs/ params produce different clusters, which 
 ### Roadmap/things to do
 
 I've impleneted these metrics, and can use them to pick optimal clusters, and have [evaluated the behavior](https://github.com/davemcg/scEiaD/blob/subCellType/analysis/clusterEval_metrix_analysis.ipynb) of these metrics , buuuuuut
-- implementation is ridculouslt ineffcient(we're talking ~30Hours x 32 cpus x 1000G ram bad)
+- implementation is ridculously ineffcient(we're talking ~30Hours x 32 cpus x 1000G ram bad for stability)
 - need to tie clustering optimization to some sort of biological function
 - (ideally) need to show theoretical origins of metrics 
 - compare to alternative methods for cluster evaluation
 - need to apply these metrics to multiple datasets, comment about louvain and leiden algs 
 
 #### Computational Efficiency
-
-To remedy this, I'm, going to re-implement the metric portion in Rust, and provide python bindings to use them. I've got the Stability metric working as a stand alone binary
+I have standalone implementations of louvain and leiden, neighbor graph via hsnw, perturbations, and local/global pruning implemented in python(thanks to parc), and it's likely to stay in python.
+To remedy metrics ineffiency, I'm, going to re-implement the metric portion in Rust, and provide python bindings to use them. I've got the Stability metric working as a stand alone binary
 TODO:
 - refactor code into a lib
 - Make python bindings 
-- implement purity
+- implement purity in Rust
 - implement multi-threading
 - add tests and setup continuous integration
+- distribute pre-compiled binaries via conda/pypi
+- potentially comment on the utility of Rust 
 
 #### Connecting clustering optimization to biological function
 
@@ -42,6 +44,7 @@ Luxburg et al is a whole [book](https://arxiv.org/pdf/1007.1075.pdf) on this top
 
 - [Clustree](https://github.com/lazappi/clustree) - visual based way for picking best clusterins 
 - other [statistical tests ](https://en.wikipedia.org/wiki/Cluster_analysis#Internal_evaluation)for choosing clusters 
+- maybe something about graph-based clustering compared to centroid based clustersing?
 
 #### Applications 
 
