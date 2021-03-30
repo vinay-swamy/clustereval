@@ -21,13 +21,16 @@ I've impleneted these metrics, and can use them to pick optimal clusters, and ha
 I have standalone implementations of louvain and leiden, neighbor graph via hsnw, perturbations, and local/global pruning implemented in python(thanks to parc), and it's likely to stay in python.
 To remedy metrics ineffiency, I'm, going to re-implement the metric portion in Rust, and provide python bindings to use them. I've got the Stability metric working as a stand alone binary
 TODO:
+- implement multi-threading
 - refactor code into a lib
 - Make python bindings 
-- implement purity in Rust
-- implement multi-threading
 - add tests and setup continuous integration
+    - get some fancy github badges 
+- switch from using Vec<String> to Vec<&str>, will force me to figure out lifetime specifiers 
+- implement purity in Rust
 - distribute pre-compiled binaries via conda/pypi
 - potentially comment on the utility of Rust 
+
 NOTE:
 - current stability calculation could be sped up by creating a diagonal matrix, as we are right now unecesarrily computing about half the calculations, but lets no worry about this until we get everything else running
 

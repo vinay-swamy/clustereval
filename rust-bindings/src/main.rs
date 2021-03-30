@@ -3,7 +3,12 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::iter::FromIterator;
 use std::iter::Iterator;
-use ndarray::{array,Array2, s, arr2};
+use ndarray::Array2;
+use rayon;
+use rayon::prelude::*;
+use flate2::read::GzDecoder;
+use std::io::prelude::*;
+
 
 #[derive(Debug)]
 struct ClusterResults {
@@ -11,7 +16,8 @@ struct ClusterResults {
     labels: Vec<String> , 
     barcode_set:HashSet<String>,
     grouped_barcodes: HashMap<String, HashSet<String>>,
-    h_tot: f64
+    h_tot: f64,
+    exp_name:String
 }
 
 #[derive(Debug)]
@@ -20,6 +26,8 @@ struct ExperimentResults{
     cluster_ids : Vec<String>,
     h_k_scores: Vec<f64>
 }
+
+
 impl ExperimentResults{
     fn pprint(&self){
         for i in 0..self.cluster_ids.len(){
@@ -38,7 +46,7 @@ fn entropy(group_map: &HashMap<String, HashSet<String>>, labels:&Vec<String> ) -
     }
 
 impl ClusterResults{
-    fn new(barcodes:Vec<String>, labels: Vec<String>) -> ClusterResults{
+    fn new(barcodes:Vec<String>, labels: Vec<String>, exp_name: String) -> ClusterResults{
         let barcode_set: HashSet<String> = HashSet::from_iter(barcodes.clone());
         let mut grouped_barcodes:HashMap<String, HashSet<String>> = HashMap::new();
         let mut old_label = &labels[0];
@@ -59,7 +67,7 @@ impl ClusterResults{
         }
         grouped_barcodes.insert(current_label.clone(), current_set);
         let h_tot = entropy(&grouped_barcodes, &labels);
-        ClusterResults{barcodes, labels, barcode_set, grouped_barcodes, h_tot}
+        ClusterResults{barcodes, labels, barcode_set, grouped_barcodes, h_tot, exp_name}
     }
     fn head(&self){
         println!("{:?}", &self.barcodes[0..5]);
@@ -83,13 +91,22 @@ fn H_k(ref_bc: &HashSet<String>, query:&ClusterResults) -> f64{
                     j+=1;
                 }
             }
-            let new_clu = ClusterResults::new(new_bc, new_labels);
+            let new_clu = ClusterResults::new(new_bc, new_labels, String::new());//use an empty string for these guys, as they get deleted later 
             return entropy(&new_clu.grouped_barcodes, &new_clu.labels);
         }
     }
+fn decode_reader(bytes: Vec<u8>) -> std::io::Result<String> {
+   let mut gz = GzDecoder::new(&bytes[..]);
+   let mut s = String::new();
+   gz.read_to_string(&mut s)?;
+   Ok(s)
+}
 
 fn read_cluster_results( file: &str) ->ClusterResults {
-    let file_string = fs::read_to_string(file).expect("Bad input file ");
+    let mut handle = fs::File::open(file).expect("Bad file input");
+    let mut buffer  = Vec::new();
+    handle.read_to_end(&mut buffer).expect("couldnt read file");
+    let file_string = decode_reader(buffer).expect("bad gzip");
     let file_string: Vec<&str> = file_string.lines().collect();
     let mut barcodes: Vec<String> = vec![String::new(); file_string.len()];
     let mut labels: Vec<String> = vec![String::new(); file_string.len()];
@@ -98,10 +115,10 @@ fn read_cluster_results( file: &str) ->ClusterResults {
         barcodes[i] = String::from(line_split[0]);
         labels[i] = String::from(format!("clu{}", line_split[1]) );
     }
-    ClusterResults::new(barcodes,labels)
+    ClusterResults::new(barcodes,labels, String::from(file))
 }
 
-fn run_calculation(ref_cluster:&ClusterResults, query_clusters: &Vec<ClusterResults>, exp_param: &String) -> ExperimentResults{
+fn calculate_stability(ref_cluster:&ClusterResults, query_clusters: &Vec<&ClusterResults>) -> ExperimentResults{
     let mut exp_result = Array2::<f64>::zeros(( ref_cluster.grouped_barcodes.len() ,query_clusters.len() ));
     for (i, cluster) in ref_cluster.grouped_barcodes.values().enumerate(){
         for (j,  experiment) in query_clusters.iter().enumerate() {
@@ -111,20 +128,54 @@ fn run_calculation(ref_cluster:&ClusterResults, query_clusters: &Vec<ClusterResu
     }
     let h_k_scores = exp_result.rows().into_iter().map(|x| 1.0 - x.mean().unwrap()).collect::<Vec<f64>>();
     let cluster_ids: Vec<String> = ref_cluster.grouped_barcodes.keys().cloned().collect::<Vec<String>>() ;
-    let exp_param = exp_param.clone();
+    let exp_param = ref_cluster.exp_name.clone();
     return ExperimentResults{ exp_param,cluster_ids, h_k_scores }
 }
 
+fn run_pairwise_calculation(experiment_list:&Vec<&ClusterResults>) ->Vec<ExperimentResults>{
+    let mut res: Vec<ExperimentResults> = Vec::new();
+    for i in 0..experiment_list.len(){
+        let ref_clust = experiment_list[i];
+        let mut query_clusts = experiment_list.clone();
+        query_clusts.remove(i);
+        res.push(calculate_stability(ref_clust,  &query_clusts, ) );
+    }
+    return res;
+
+}
+
+
+fn run_pairwise_calculation_threaded(experiment_list:&Vec<&ClusterResults>) ->Vec<ExperimentResults>{
+    
+    let pool = rayon::ThreadPoolBuilder::new().num_threads(4).build().unwrap();
+    let dummy_array: Vec<usize> = (0..experiment_list.len()).collect();
+    let res: Vec<ExperimentResults> = pool.install(|| dummy_array.into_par_iter()
+                                         .map(|i:usize| { 
+                                            let ref_clust = experiment_list[i];
+                                            let mut query_clusts = experiment_list.clone();
+                                            query_clusts.remove(i);
+                                            return calculate_stability(ref_clust, &query_clusts)
+                                            })
+                                         .collect()
+                                        );                                                      
+    return res 
+    
+
+}
+
+
 fn main() {
-    let ref_clust = read_cluster_results("cluster_out/exp-0_resolution-0.6_knn-44_.csv");
-    let test_clusters :Vec<ClusterResults> = vec![
-        read_cluster_results("cluster_out/exp-0_resolution-0.7_knn-29_.csv"),
-        read_cluster_results("cluster_out/exp-0_resolution-0.8_knn-53_.csv"),
-        read_cluster_results("cluster_out/exp-0_resolution-0.9_knn-71_.csv"),
-        read_cluster_results("cluster_out/exp-0_resolution-1.0_knn-48_.csv"),
+    let test_clusters_objs :Vec<ClusterResults> = vec![
+        read_cluster_results("cluster_out/exp-0_resolution-0.6_knn-44_.csv.gz"),
+        read_cluster_results("cluster_out/exp-0_resolution-0.7_knn-29_.csv.gz"),
+        read_cluster_results("cluster_out/exp-0_resolution-0.8_knn-53_.csv.gz"),
+        read_cluster_results("cluster_out/exp-0_resolution-0.9_knn-71_.csv.gz"),
+        read_cluster_results("cluster_out/exp-0_resolution-1.0_knn-48_.csv.gz"),
     ];
-    let res = run_calculation(&ref_clust, &test_clusters, &String::from("smooby"));
-    res.pprint();
-
-
+    let test_cluster_refs: Vec<&ClusterResults> = test_clusters_objs.iter().collect();
+    let res:Vec<f64> = run_pairwise_calculation(&test_cluster_refs).into_iter().map(|x| x.h_k_scores.iter().sum() ).collect() ;
+    //let c_res :Vec<f64> = run_pairwise_calculation_threaded(&test_cluster_refs).into_iter().map(|x| x.h_k_scores.iter().sum() ).collect() ;
+    println!("RES {:?}", res);
+    //println!("cRES{:?}", c_res);
+    
 }

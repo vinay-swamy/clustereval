@@ -8,3 +8,5 @@ edition = "2018"
 
 [dependencies]
 ndarray = "0.15"
+rayon = "1.5.0"
+flate2 = "1.0"
