@@ -147,7 +147,7 @@ fn run_pairwise_calculation(experiment_list:&Vec<&ClusterResults>) ->Vec<Experim
 
 fn run_pairwise_calculation_threaded(experiment_list:&Vec<&ClusterResults>) ->Vec<ExperimentResults>{
     
-    let pool = rayon::ThreadPoolBuilder::new().num_threads(4).build().unwrap();
+    let pool = rayon::ThreadPoolBuilder::new().num_threads(16).build().unwrap();
     let dummy_array: Vec<usize> = (0..experiment_list.len()).collect();
     let res: Vec<ExperimentResults> = pool.install(|| dummy_array.into_par_iter()
                                          .map(|i:usize| { 
@@ -173,19 +173,13 @@ fn main() {
                                 .collect();
     
 
-    // let test_clusters_objs :Vec<ClusterResults> = vec![
-    //     read_cluster_results("cluster_out/exp-0_resolution-0.6_knn-44_.csv.gz"),
-    //     read_cluster_results("cluster_out/exp-0_resolution-0.7_knn-29_.csv.gz"),
-    //     read_cluster_results("cluster_out/exp-0_resolution-0.8_knn-53_.csv.gz"),
-    //     read_cluster_results("cluster_out/exp-0_resolution-0.9_knn-71_.csv.gz"),
-    //     read_cluster_results("cluster_out/exp-0_resolution-1.0_knn-48_.csv.gz"),
-    // ];
     let test_cluster_refs: Vec<&ClusterResults> = test_clusters_objs.iter().collect();
-    let res:Vec<f64> = run_pairwise_calculation(&test_cluster_refs).into_iter().map(|x| x.h_k_scores.iter().sum() ).collect() ;
-    //let c_res :Vec<f64> = run_pairwise_calculation_threaded(&test_cluster_refs).into_iter().map(|x| x.h_k_scores.iter().sum() ).collect() ;
-    println!("RES {:?}", res);
-    //println!("cRES{:?}", c_res);
-    
-    
-    
+    // let res:Vec<f64> = run_pairwise_calculation(&test_cluster_refs).into_iter().map(|x| x.h_k_scores.iter().sum() ).collect() ;
+    let c_res :Vec<f64> = run_pairwise_calculation_threaded(&test_cluster_refs)
+                          .into_iter()
+                          .map(|x| x.h_k_scores.iter().sum() )
+                          .collect() ;
+    //println!("RES {:?}", res);
+    println!("cRES{:?}", c_res);
+
 }
