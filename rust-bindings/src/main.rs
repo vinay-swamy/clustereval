@@ -8,7 +8,7 @@ use rayon;
 use rayon::prelude::*;
 use flate2::read::GzDecoder;
 use std::io::prelude::*;
-
+use glob::glob;
 
 #[derive(Debug)]
 struct ClusterResults {
@@ -165,17 +165,27 @@ fn run_pairwise_calculation_threaded(experiment_list:&Vec<&ClusterResults>) ->Ve
 
 
 fn main() {
-    let test_clusters_objs :Vec<ClusterResults> = vec![
-        read_cluster_results("cluster_out/exp-0_resolution-0.6_knn-44_.csv.gz"),
-        read_cluster_results("cluster_out/exp-0_resolution-0.7_knn-29_.csv.gz"),
-        read_cluster_results("cluster_out/exp-0_resolution-0.8_knn-53_.csv.gz"),
-        read_cluster_results("cluster_out/exp-0_resolution-0.9_knn-71_.csv.gz"),
-        read_cluster_results("cluster_out/exp-0_resolution-1.0_knn-48_.csv.gz"),
-    ];
+    let test_clusters_objs:Vec<ClusterResults> = glob("cluster_out/*_.csv.gz")
+                                .expect("Failed to read glob pattern")
+                                .map(|x|{let file =  String::from(x.unwrap().to_str().expect("asd"));
+                                         return read_cluster_results(&file)}
+                                        )
+                                .collect();
+    
+
+    // let test_clusters_objs :Vec<ClusterResults> = vec![
+    //     read_cluster_results("cluster_out/exp-0_resolution-0.6_knn-44_.csv.gz"),
+    //     read_cluster_results("cluster_out/exp-0_resolution-0.7_knn-29_.csv.gz"),
+    //     read_cluster_results("cluster_out/exp-0_resolution-0.8_knn-53_.csv.gz"),
+    //     read_cluster_results("cluster_out/exp-0_resolution-0.9_knn-71_.csv.gz"),
+    //     read_cluster_results("cluster_out/exp-0_resolution-1.0_knn-48_.csv.gz"),
+    // ];
     let test_cluster_refs: Vec<&ClusterResults> = test_clusters_objs.iter().collect();
     let res:Vec<f64> = run_pairwise_calculation(&test_cluster_refs).into_iter().map(|x| x.h_k_scores.iter().sum() ).collect() ;
     //let c_res :Vec<f64> = run_pairwise_calculation_threaded(&test_cluster_refs).into_iter().map(|x| x.h_k_scores.iter().sum() ).collect() ;
     println!("RES {:?}", res);
     //println!("cRES{:?}", c_res);
+    
+    
     
 }
