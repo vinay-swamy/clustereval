@@ -147,9 +147,9 @@ fn run_pairwise_calculation(experiment_list:&Vec<&ClusterResults>) ->Vec<Experim
 }
 
 
-fn run_pairwise_calculation_threaded(experiment_list:&Vec<&ClusterResults>) ->Vec<ExperimentResults>{
+fn run_pairwise_calculation_threaded(experiment_list:&Vec<&ClusterResults>, nthreads:usize) ->Vec<ExperimentResults>{
     
-    let pool = rayon::ThreadPoolBuilder::new().num_threads(16).build().unwrap();
+    let pool = rayon::ThreadPoolBuilder::new().num_threads(nthreads).build().unwrap();
     let dummy_array: Vec<usize> = (0..experiment_list.len()).collect();
     let res: Vec<ExperimentResults> = pool.install(|| dummy_array.into_par_iter()
                                          .map(|i:usize| { 
@@ -166,17 +166,17 @@ fn run_pairwise_calculation_threaded(experiment_list:&Vec<&ClusterResults>) ->Ve
 }
 
 #[pyfunction]
-fn run_stability_calculation(file_glob: &str) {
+fn run_stability_calculation(file_glob: &str, nthreads:usize) {
     let test_clusters_objs:Vec<ClusterResults> = glob(file_glob)
                                 .expect("Failed to read glob pattern")
-                                .map(|x|{let file =  String::from(x.unwrap().to_str().expect("asd"));
+                                .map(|x|{let file =  String::from(x.unwrap().to_str().expect("Failed to unwrap filename"));
                                          return read_cluster_results(&file)}
                                         )
                                 .collect();
     
 
     let test_cluster_refs: Vec<&ClusterResults> = test_clusters_objs.iter().collect();
-    let c_res :Vec<f64> = run_pairwise_calculation_threaded(&test_cluster_refs)
+    let c_res :Vec<f64> = run_pairwise_calculation_threaded(&test_cluster_refs, nthreads)
                           .into_iter()
                           .map(|x| x.h_k_scores.iter().sum() )
                           .collect() ;
