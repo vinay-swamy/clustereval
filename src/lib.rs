@@ -9,6 +9,8 @@ use rayon::prelude::*;
 use flate2::read::GzDecoder;
 use std::io::prelude::*;
 use glob::glob;
+use pyo3::prelude::*;
+use pyo3::{wrap_pyfunction, wrap_pymodule};
 
 #[derive(Debug)]
 struct ClusterResults {
@@ -163,9 +165,9 @@ fn run_pairwise_calculation_threaded(experiment_list:&Vec<&ClusterResults>) ->Ve
 
 }
 
-
-fn main() {
-    let test_clusters_objs:Vec<ClusterResults> = glob("cluster_out/*_.csv.gz")
+#[pyfunction]
+fn run_stability_calculation(file_glob: &str) {
+    let test_clusters_objs:Vec<ClusterResults> = glob(file_glob)
                                 .expect("Failed to read glob pattern")
                                 .map(|x|{let file =  String::from(x.unwrap().to_str().expect("asd"));
                                          return read_cluster_results(&file)}
@@ -174,12 +176,24 @@ fn main() {
     
 
     let test_cluster_refs: Vec<&ClusterResults> = test_clusters_objs.iter().collect();
-    // let res:Vec<f64> = run_pairwise_calculation(&test_cluster_refs).into_iter().map(|x| x.h_k_scores.iter().sum() ).collect() ;
     let c_res :Vec<f64> = run_pairwise_calculation_threaded(&test_cluster_refs)
                           .into_iter()
                           .map(|x| x.h_k_scores.iter().sum() )
                           .collect() ;
-    //println!("RES {:?}", res);
     println!("cRES{:?}", c_res);
 
 }
+
+fn stability_rust(module: &PyModule) -> PyResult<()> {
+    module.add_function(wrap_pyfunction!(run_stability_calculation, module)?)?;
+    Ok(())
+}
+
+#[pymodule]
+fn clustereval(py: Python, m: &PyModule) -> PyResult<()> {
+    let submod = PyModule::new(py, "stability_rust")?;
+    stability_rust(submod)?;
+    m.add_submodule(submod)?;
+    Ok(())
+}
+
