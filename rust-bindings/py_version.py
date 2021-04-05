@@ -41,23 +41,21 @@ def calc_stability(tup):
     clusters = [group[0] for group in ref.groupby("labels")]
     return pd.DataFrame.from_dict({runname: clusters, 'H_k_scores': H_k_scores})
 
-test_clusters  = [
-    pd.read_csv("cluster_out/exp-0_resolution-0.6_knn-44_.csv.gz", names = ['Barcode', 'labels']),
-    pd.read_csv("cluster_out/exp-0_resolution-0.7_knn-29_.csv.gz", names = ['Barcode', 'labels']),
-    pd.read_csv("cluster_out/exp-0_resolution-0.8_knn-53_.csv.gz", names = ['Barcode', 'labels']),
-    pd.read_csv("cluster_out/exp-0_resolution-0.9_knn-71_.csv.gz", names = ['Barcode', 'labels']),
-    pd.read_csv("cluster_out/exp-0_resolution-1.0_knn-48_.csv.gz", names = ['Barcode', 'labels']),
-]
+files = glob.glob('cluster_out/*_.csv.gz')
+test_clusters  = [ pd.read_csv(i, names = ['Barcode', 'labels']) for i in files]
 scores = pd.DataFrame({'H_tot':  [entropy(i) for i in test_clusters]})
 
-exp_stability_gen = [
+
+exp_stability_gen = (
     calc_stability( 
     (test_clusters[i], 
      scores.drop(axis=1, index=i), test_clusters[0:i] +
      test_clusters[(i+1):], 
-     "sd"
-     ) 
+     "sd") 
+                     )
+    for i in range(len(test_clusters))
      )
-    for i in range(len(test_clusters))]
-
+    #]
+pool = Pool(16)
+exp_stability_dfs = pool.map(calc_stability, exp_stability_gen)
 print([i.H_k_scores.sum() for i in exp_stability_gen])
