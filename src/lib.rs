@@ -10,7 +10,7 @@ use flate2::read::GzDecoder;
 use std::io::prelude::*;
 use glob::glob;
 use pyo3::prelude::*;
-use pyo3::{wrap_pyfunction, wrap_pymodule};
+use pyo3::wrap_pyfunction;
 
 #[derive(Debug)]
 struct ClusterResults {
@@ -197,3 +197,8 @@ fn clustereval(py: Python, m: &PyModule) -> PyResult<()> {
     Ok(())
 }
 
+#[test]
+fn check_reader(){
+    let obj = read_cluster_results("test_data/exp-0_resolution-0.4_knn-15_.csv.gz");
+    assert_eq!(obj.barcodes.len(), obj.labels.len());
+}

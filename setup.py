@@ -6,7 +6,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="clustereval", # Replace with your own username
-    version="0.0.1",
+    version="0.0.2",
     author="Vinay Swamy",
     author_email="swamyvinny@gmail.com",
     description="A small example package",
