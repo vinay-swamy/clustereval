@@ -22,11 +22,15 @@ struct ClusterResults {
     exp_name:String
 }
 
-#[derive(Debug)]
+#[pyclass]
 struct ExperimentResults{
+    #[pyo3(get)]
     exp_param :String,
+    #[pyo3(get)]
     cluster_ids : Vec<String>,
+    #[pyo3(get)]
     stability_scores: Vec<f64>,
+    #[pyo3(get)]
     purity_scores:Vec<f64>
 }
 
@@ -38,14 +42,23 @@ impl ExperimentResults{
         }
     }
     fn write_csv(&self, outpath:&str)->std::io::Result<()>{
-        println!("WRITING");
+
         let mut lines: Vec<String> = vec![String::new();self.cluster_ids.len()];
         for i in 0..self.cluster_ids.len(){
             lines[i] = format!("{},{},{}\n",self.cluster_ids[i], self.stability_scores[i],self.purity_scores[i])
         }
         let outfile = format!("{}/{}", outpath, self.exp_param);
         let outstring = lines.join("");
-        println!("{}", &outfile);
+        fs::write(outfile, outstring).unwrap();
+        Ok(())
+    }
+    fn write_csv_simple(&self, outfile:&str)->std::io::Result<()>{
+
+        let mut lines: Vec<String> = vec![String::new();self.cluster_ids.len()];
+        for i in 0..self.cluster_ids.len(){
+            lines[i] = format!("{},{},{}\n",self.cluster_ids[i], self.stability_scores[i],self.purity_scores[i])
+        }
+        let outstring = lines.join("");
         fs::write(outfile, outstring).unwrap();
         Ok(())
 
@@ -198,7 +211,7 @@ fn run_pairwise_calculation_threaded(experiment_list:&Vec<&ClusterResults>, nthr
 }
 
 #[pyfunction]
-fn calculate_cluster_metrics(file_glob: &str, nthreads:usize, outpath: &str) {
+fn pairwise_metric_calculation_fromdisk(file_glob: &str, nthreads:usize) -> Vec<ExperimentResults> {
     let test_clusters_objs:Vec<ClusterResults> = glob(file_glob)
                                 .expect("Failed to read glob pattern")
                                 .map(|x|{let file =  String::from(x.unwrap().to_str().expect("Failed to unwrap filename"));
@@ -208,22 +221,52 @@ fn calculate_cluster_metrics(file_glob: &str, nthreads:usize, outpath: &str) {
     
 
     let test_cluster_refs: Vec<&ClusterResults> = test_clusters_objs.iter().collect();
-    let c_res :Vec<_> = run_pairwise_calculation_threaded(&test_cluster_refs, nthreads)
-                          .into_iter()
-                          .map(|x| x.write_csv(outpath) )
-                          .collect() ;
-    println!("DONE")
+    let c_res :Vec<ExperimentResults> = run_pairwise_calculation_threaded(&test_cluster_refs, nthreads);
+    return c_res
 }
 
-fn stability_rust(module: &PyModule) -> PyResult<()> {
-    module.add_function(wrap_pyfunction!(calculate_cluster_metrics, module)?)?;
+#[pyfunction]
+fn pairwise_metric_calculation_frommem(mut cluster_dfs: Vec<HashMap<String, Vec<String>>>, exp_names:Vec<String>, nthreads:usize) -> Vec<ExperimentResults> {
+    let clusters_objs_owned = cluster_dfs.into_iter().enumerate().map(|(i, mut x)|ClusterResults::new(x.remove(&String::from("Barcode")).unwrap(), 
+                                                                            x.remove(&String::from("labels")).unwrap(), 
+                                                                            exp_names[i].clone() )
+                                                    ).collect::<Vec<ClusterResults>>();
+                        
+    
+
+    let clusters_objs_refs: Vec<&ClusterResults> = clusters_objs_owned.iter().collect();
+    let c_res :Vec<ExperimentResults> = run_pairwise_calculation_threaded(&clusters_objs_refs, nthreads);
+    return c_res
+}
+
+#[pyfunction]
+fn oneway_metric_calculation(mut ref_df: HashMap<String, Vec<String>>, mut query_dfs:Vec<HashMap<String, Vec<String>>>, exp_name: String, outfile:&str){
+    let ref_cluster = ClusterResults::new(ref_df.remove(&String::from("Barcode")).unwrap(), 
+                                          ref_df.remove(&String::from("labels")).unwrap(), 
+                                          exp_name);
+    let query_clusters_owned = query_dfs.into_iter().map(|mut x|ClusterResults::new(x.remove(&String::from("Barcode")).unwrap(), 
+                                                                                x.remove(&String::from("labels")).unwrap(), 
+                                                                                String::from("perturbation") )
+                                                        ).collect::<Vec<ClusterResults>>();
+    let query_clusters_refs = query_clusters_owned.iter().collect::<Vec<&ClusterResults>>();
+
+    let res = calculate_metrics(&ref_cluster, &query_clusters_refs);
+    res.write_csv_simple(outfile);
+
+}
+
+fn calc_metrics(module: &PyModule) -> PyResult<()> {
+    module.add_function(wrap_pyfunction!(pairwise_metric_calculation_fromdisk, module)?)?;
+    module.add_function(wrap_pyfunction!(pairwise_metric_calculation_frommem, module)?)?;
+    module.add_function(wrap_pyfunction!(oneway_metric_calculation, module)?)?;
+    module.add_class::<ExperimentResults>()?;
     Ok(())
 }
 
 #[pymodule]
 fn clustereval(py: Python, m: &PyModule) -> PyResult<()> {
-    let submod = PyModule::new(py, "stability_rust")?;
-    stability_rust(submod)?;
+    let submod = PyModule::new(py, "calc_metrics")?;
+    calc_metrics(submod)?;
     m.add_submodule(submod)?;
     Ok(())
 }
