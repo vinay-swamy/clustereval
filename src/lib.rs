@@ -255,19 +255,20 @@ fn oneway_metric_calculation(mut ref_df: HashMap<String, Vec<String>>, mut query
 
 }
 
-fn calc_metrics(module: &PyModule) -> PyResult<()> {
+// fn calc_metrics(module: &PyModule) -> PyResult<()> {
+//     module.add_function(wrap_pyfunction!(pairwise_metric_calculation_fromdisk, module)?)?;
+//     module.add_function(wrap_pyfunction!(pairwise_metric_calculation_frommem, module)?)?;
+//     module.add_function(wrap_pyfunction!(oneway_metric_calculation, module)?)?;
+//     module.add_class::<ExperimentResults>()?;
+//     Ok(())
+// }
+
+#[pymodule]
+fn calc_metrics(py: Python, module: &PyModule) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(pairwise_metric_calculation_fromdisk, module)?)?;
     module.add_function(wrap_pyfunction!(pairwise_metric_calculation_frommem, module)?)?;
     module.add_function(wrap_pyfunction!(oneway_metric_calculation, module)?)?;
     module.add_class::<ExperimentResults>()?;
-    Ok(())
-}
-
-#[pymodule]
-fn clustereval(py: Python, m: &PyModule) -> PyResult<()> {
-    let submod = PyModule::new(py, "calc_metrics")?;
-    calc_metrics(submod)?;
-    m.add_submodule(submod)?;
     Ok(())
 }
 
