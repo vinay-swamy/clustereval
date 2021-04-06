@@ -1,1 +1,1 @@
-from .clustereval import stability_rust
+from .clustereval import calc_metrics
