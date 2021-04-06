@@ -26,15 +26,29 @@ struct ClusterResults {
 struct ExperimentResults{
     exp_param :String,
     cluster_ids : Vec<String>,
-    h_k_scores: Vec<f64>
+    stability_scores: Vec<f64>,
+    purity_scores:Vec<f64>
 }
 
 
 impl ExperimentResults{
     fn pprint(&self){
         for i in 0..self.cluster_ids.len(){
-            println!("{},{}",&self.cluster_ids[i], &self.h_k_scores[i])
+            println!("{},{},{}",&self.cluster_ids[i], &self.stability_scores[i],&self.purity_scores[i] )
         }
+    }
+    fn write_csv(&self, outpath:&str)->std::io::Result<()>{
+        println!("WRITING");
+        let mut lines: Vec<String> = vec![String::new();self.cluster_ids.len()];
+        for i in 0..self.cluster_ids.len(){
+            lines[i] = format!("{},{},{}\n",self.cluster_ids[i], self.stability_scores[i],self.purity_scores[i])
+        }
+        let outfile = format!("{}/{}", outpath, self.exp_param);
+        let outstring = lines.join("");
+        println!("{}", &outfile);
+        fs::write(outfile, outstring).unwrap();
+        Ok(())
+
     }
 }
 
@@ -78,7 +92,7 @@ impl ClusterResults{
     
 }
 
-fn H_k(ref_bc: &HashSet<String>, query:&ClusterResults) -> f64{
+fn stability_k(ref_bc: &HashSet<String>, query:&ClusterResults) -> f64{
         let intersect: HashSet<String> = ref_bc.intersection(&query.barcode_set).cloned().collect::<HashSet<String>>();
         if intersect.len() == 0{
             return 0.0
@@ -117,35 +131,53 @@ fn read_cluster_results( file: &str) ->ClusterResults {
         barcodes[i] = String::from(line_split[0]);
         labels[i] = String::from(format!("clu{}", line_split[1]) );
     }
-    ClusterResults::new(barcodes,labels, String::from(file))
+    let exp_name  = file.split("/").last().unwrap() ;
+    ClusterResults::new(barcodes,labels, String::from(exp_name))
 }
 
-fn calculate_stability(ref_cluster:&ClusterResults, query_clusters: &Vec<&ClusterResults>) -> ExperimentResults{
-    let mut exp_result = Array2::<f64>::zeros(( ref_cluster.grouped_barcodes.len() ,query_clusters.len() ));
+fn calculate_metrics(ref_cluster:&ClusterResults, query_clusters: &Vec<&ClusterResults>) -> ExperimentResults{
+    let mut stability_results = Array2::<f64>::zeros(( ref_cluster.grouped_barcodes.len() ,query_clusters.len() ));
+    let mut purity_results = Array2::<f64>::zeros(( ref_cluster.grouped_barcodes.len() ,query_clusters.len() ));
     for (i, cluster) in ref_cluster.grouped_barcodes.values().enumerate(){
         for (j,  experiment) in query_clusters.iter().enumerate() {
-            exp_result[[i, j]]= H_k(&cluster, &experiment) / experiment.h_tot ; 
+            stability_results[[i, j]]= stability_k(&cluster, &experiment) / experiment.h_tot ; 
+            purity_results[[i,j]] = purity_k(&cluster, &experiment.grouped_barcodes)
         }
 
     }
-    let h_k_scores = exp_result.rows().into_iter().map(|x| 1.0 - x.mean().unwrap()).collect::<Vec<f64>>();
+    let stability_scores = stability_results.rows().into_iter().map(|x| 1.0 - x.mean().unwrap()).collect::<Vec<f64>>();
+    let purity_scores = purity_results.rows().into_iter().map( |x| {
+        let mut v = x.to_vec();
+        v.retain(|x| *x != f64::NAN);
+        return vmean(v) 
+    } ).collect::<Vec<f64>>();   
     let cluster_ids: Vec<String> = ref_cluster.grouped_barcodes.keys().cloned().collect::<Vec<String>>() ;
     let exp_param = ref_cluster.exp_name.clone();
-    return ExperimentResults{ exp_param,cluster_ids, h_k_scores }
+    return ExperimentResults{ exp_param,cluster_ids, stability_scores, purity_scores }
 }
 
-fn run_pairwise_calculation(experiment_list:&Vec<&ClusterResults>) ->Vec<ExperimentResults>{
-    let mut res: Vec<ExperimentResults> = Vec::new();
-    for i in 0..experiment_list.len(){
-        let ref_clust = experiment_list[i];
-        let mut query_clusts = experiment_list.clone();
-        query_clusts.remove(i);
-        res.push(calculate_stability(ref_clust,  &query_clusts, ) );
+fn vmean(v:Vec<f64>) -> f64{
+ return v.iter().sum::<f64>() / v.len() as f64
+
+}
+
+fn purity_k(ref_bc_set: &HashSet<String>, query_map: &HashMap<String, HashSet<String>>) -> f64{
+    let mut max_overlap = 0;
+    let mut max_overlap_key = &String::from("NA");
+    for query_key in query_map.keys(){
+        let q_cluster_set = query_map.get(query_key).unwrap();
+        let overlap = ref_bc_set.intersection(q_cluster_set).count();
+        if overlap > max_overlap{
+            max_overlap = overlap;
+            max_overlap_key = query_key;
+        }
     }
-    return res;
-
+    if max_overlap_key == &String::from("NA"){
+        return f64::NAN;
+    } else{
+        return max_overlap as f64 / query_map.get(max_overlap_key).unwrap().len() as f64
+    }
 }
-
 
 fn run_pairwise_calculation_threaded(experiment_list:&Vec<&ClusterResults>, nthreads:usize) ->Vec<ExperimentResults>{
     
@@ -156,7 +188,7 @@ fn run_pairwise_calculation_threaded(experiment_list:&Vec<&ClusterResults>, nthr
                                             let ref_clust = experiment_list[i];
                                             let mut query_clusts = experiment_list.clone();
                                             query_clusts.remove(i);
-                                            return calculate_stability(ref_clust, &query_clusts)
+                                            return calculate_metrics(ref_clust, &query_clusts)
                                             })
                                          .collect()
                                         );                                                      
@@ -166,7 +198,7 @@ fn run_pairwise_calculation_threaded(experiment_list:&Vec<&ClusterResults>, nthr
 }
 
 #[pyfunction]
-fn run_stability_calculation(file_glob: &str, nthreads:usize) {
+fn calculate_cluster_metrics(file_glob: &str, nthreads:usize, outpath: &str) {
     let test_clusters_objs:Vec<ClusterResults> = glob(file_glob)
                                 .expect("Failed to read glob pattern")
                                 .map(|x|{let file =  String::from(x.unwrap().to_str().expect("Failed to unwrap filename"));
@@ -176,16 +208,15 @@ fn run_stability_calculation(file_glob: &str, nthreads:usize) {
     
 
     let test_cluster_refs: Vec<&ClusterResults> = test_clusters_objs.iter().collect();
-    let c_res :Vec<f64> = run_pairwise_calculation_threaded(&test_cluster_refs, nthreads)
+    let c_res :Vec<_> = run_pairwise_calculation_threaded(&test_cluster_refs, nthreads)
                           .into_iter()
-                          .map(|x| x.h_k_scores.iter().sum() )
+                          .map(|x| x.write_csv(outpath) )
                           .collect() ;
-    println!("cRES{:?}", c_res);
-
+    println!("DONE")
 }
 
 fn stability_rust(module: &PyModule) -> PyResult<()> {
-    module.add_function(wrap_pyfunction!(run_stability_calculation, module)?)?;
+    module.add_function(wrap_pyfunction!(calculate_cluster_metrics, module)?)?;
     Ok(())
 }
 
