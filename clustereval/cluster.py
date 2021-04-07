@@ -121,28 +121,25 @@ class Cluster:
 
     def run_perturbation(self):
         ## perform pertrubation similar to the sanes bipolar paper
-        print("Poortoorb ing")
+        ### randomly add and remove edges to graph
         graph = self.nn_graph
-        ### add randomly add and remove edges to graph
         sub_sample_size = int(len(graph.es) * .05)
         edges_to_remove = np.random.choice(
             list(range(len(graph.es))), size=sub_sample_size, replace=False)
-        edges_to_add = [tuple(np.random.choice(list(range(len(graph.vs))),
-                                               size=2,
-                                               replace=False))
-                        for _ in range(sub_sample_size)]
+
+        i = list(range(len(graph.vs)))
+        edges_to_add = np.random.choice(i, size=(sub_sample_size, 2), replace=True)
+
         graph.delete_edges(edges_to_remove)
         graph.add_edges(edges_to_add)
-       ### add noise to edge weights
-        j = 0
-        for i in range(len(graph.es)):
-            if graph.es[i]['weight'] is None:
-                graph.es[i]['weight'] = np.random.uniform(.6, 1.66)
-            else:
-                graph.es[i]['weight'] = graph.es[i]['weight'] * \
-                    np.random.uniform(.6, 1.66)
+
+        ### add noise to edge weights
+        old_weights = np.asarray(graph.es['weight'])
+        new_weights = np.where(old_weights == None, 1, old_weights) * np.random.uniform(.6, 1.66, len(old_weights))
+        graph.es['weight'] = new_weights
         self.nn_graph = graph
         return
+
 
     def run_leiden(self, vertex_partition_method, n_iter, resolution, jac_weighted_edges=None):
         self.nn_graph.simplify(combine_edges='sum')
@@ -184,3 +181,30 @@ class Cluster:
             labels = reassign_small_cluster_cells(labels, small_pop_list, small_cluster_list, self.neighbor_array)
         return labels 
 
+def run_clustering(reduction,alg,  res, k, perturb = False, local_pruning=False, global_pruning=False, min_cluster_size=10):
+    clu_obj = Cluster(data=reduction, knn=k,  nthreads=1)
+    clu_obj.buildNeighborGraph(nn_space='l2', ef_construction=150,
+                               local_pruning=local_pruning, global_pruning=global_pruning, jac_std_global='median')
+    if perturb:
+        clu_obj.run_perturbation()
+    
+    if alg == 'louvain':
+        labels = clu_obj.run_louvain(
+            vertex_partition_method=louvain.RBConfigurationVertexPartition,
+            resolution=res,
+            jac_weighted_edges='weight'
+        )
+    elif alg == 'leiden':
+        labels = clu_obj.run_leiden(
+            vertex_partition_method=leidenalg.RBConfigurationVertexPartition,
+            n_iter=5,
+            resolution=res,
+            jac_weighted_edges='weight'
+        )
+    else:
+        print('BAD ALG')
+        raise NotImplementedError
+    labels_corrected = clu_obj.merge_singletons(labels, min_cluster_size)
+    outdf = pd.DataFrame(
+        {"Barcode": list(reduction.index), 'labels': labels_corrected}).sort_values('labels')
+    return outdf
