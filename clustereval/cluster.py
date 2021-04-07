@@ -181,3 +181,30 @@ class Cluster:
             labels = reassign_small_cluster_cells(labels, small_pop_list, small_cluster_list, self.neighbor_array)
         return labels 
 
+def run_clustering(reduction,alg,  res, k, perturb = False, local_pruning=False, global_pruning=False, min_cluster_size=10):
+    clu_obj = Cluster(data=reduction, knn=k,  nthreads=1)
+    clu_obj.buildNeighborGraph(nn_space='l2', ef_construction=150,
+                               local_pruning=local_pruning, global_pruning=global_pruning, jac_std_global='median')
+    if perturb:
+        clu_obj.run_perturbation()
+    
+    if alg == 'louvain':
+        labels = clu_obj.run_louvain(
+            vertex_partition_method=louvain.RBConfigurationVertexPartition,
+            resolution=res,
+            jac_weighted_edges='weight'
+        )
+    elif alg == 'leiden':
+        labels = clu_obj.run_leiden(
+            vertex_partition_method=leidenalg.RBConfigurationVertexPartition,
+            n_iter=5,
+            resolution=res,
+            jac_weighted_edges='weight'
+        )
+    else:
+        print('BAD ALG')
+        raise NotImplementedError
+    labels_corrected = clu_obj.merge_singletons(labels, min_cluster_size)
+    outdf = pd.DataFrame(
+        {"Barcode": list(reduction.index), 'labels': labels_corrected}).sort_values('labels')
+    return outdf
