@@ -1,0 +1,30 @@
+
+
+rule make_count_matrices:
+    output:
+        'data/sanes_amacrine_preproccessed.csv.gz',
+        'data/pbmc_preproccessed.csv.gz',
+    shell:
+        '''
+        wget https://cf.10xgenomics.com/samples/cell/pbmc3k/pbmc3k_filtered_gene_bc_matrices.tar.gz
+        wget https://ftp.ncbi.nlm.nih.gov/geo/series/GSE149nnn/GSE149715/suppl/GSE149715%5FMouseAC%5Fcount%5Fmatrix%2Ecsv%2Egz
+        tar -xzf pbmc3k_filtered_gene_bc_matrices.tar.gz
+        module load R/4.0.3
+        Rscript scripts/make_raw_data.R
+        rm pbmc3k_filtered_gene_bc_matrices.tar.gz
+        rm filtered_gene_bc_matrices/ -rf
+        rm GSE149715_MouseAC_count_matrix.csv.gz
+        '''
+
+
+rule run_parameter_exp_clustering:
+    input: 
+        mat = 'data/{countMat}_preproccessed.csv.gz'
+    output:
+        expand('par_exp_out/{{countMat}}-exp_alg-{{alg}}_res-{{res}}_knn-{n}_.csv.gz', n=list(range(5,100)))
+    run:
+        import clustereval as ce
+        import numpy as np 
+        import pandas as pd
+        reduction = pd.read_csv(input.mat, index_col=0)
+        
