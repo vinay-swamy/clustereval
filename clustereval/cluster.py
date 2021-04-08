@@ -29,6 +29,14 @@ def reassign_small_cluster_cells(labels, small_pop_list, small_cluster_list, nei
     return labels
 
 class Cluster:
+    """This is the main python class to do Nearest Neighbor(NN) graph-based clustering and run perturbation experiments.
+    :param data: A numeric Pandas DataFrame to cluster. Theoretically could also be a 2D numpy array, but have not tested
+    :type client: numeric Pandas DataFrame
+    :param knn: The number of nearest neighbors to use for NN graph creation
+    :type knn: int
+    :param nthreads: number of threads to use for NN graph creation
+    :type nthreads: int
+    """
     def __init__(self, data, knn, nthreads):
         self.knn = knn
         self.data = data
@@ -76,7 +84,19 @@ class Cluster:
         return csr_graph
 
     def buildNeighborGraph(self, nn_space, ef_construction, local_pruning, global_pruning, jac_std_global):
-                # ef always should be >K. higher ef, more accurate query
+        """Build an approximate nearest neighbor graph from input data. Implements local and global edge pruning methods from PARC.
+
+        :param nn_space: distance metric to use for graph creation. one of ['l2', 'ip', 'cosine']
+        :type nn_space: str
+        :param ef_construction: construction time/accuracy trade off. See https://github.com/nmslib/hnswlib/blob/master/ALGO_PARAMS.md
+        :type ef_construction: int
+        :param local_pruning: Run local edge pruning 
+        :type local_pruning: bool
+        :param global_pruning: run global edge pruning
+        :type global_pruning: bool
+        :param jac_std_global: CHANGEME Not totally sure tbh, need to look into it more 
+        :type jac_std_global: str
+        """        
         ef_query = max(100, self.knn + 1)
         num_dims = self.data.shape[1]
         n_elements = self.data.shape[0]
@@ -120,8 +140,9 @@ class Cluster:
 
 
     def run_perturbation(self):
-        ## perform pertrubation similar to the sanes bipolar paper
-        ### randomly add and remove edges to graph
+        """Run Perturbation experiments descibed in ... CHANGEME: expose edge removal/addition sampling frac and weight noise range
+        """        
+
         graph = self.nn_graph
         sub_sample_size = int(len(graph.es) * .05)
         edges_to_remove = np.random.choice(
@@ -142,6 +163,19 @@ class Cluster:
 
 
     def run_leiden(self, vertex_partition_method, n_iter, resolution, jac_weighted_edges=None):
+        """Run leiden clustering data on built nn graph
+
+        :param vertex_partition_method: Quality function to optimize to find partitions. See leiden docs for more info 
+        :type vertex_partition_method: leidenalg.VertexPartition.MutableVertexPartition
+        :param n_iter: Number of iterations to run the Leiden algorithm. If the number of iterations is negative, the Leiden algorithm is run until an iteration in which there was no improvement.
+        :type n_iter: int
+        :param resolution: Cluster resolution that roughly correlates with number of clusters
+        :type resolution: float
+        :param jac_weighted_edges: list of weights or name of edge attribute within NN graph , defaults to None
+        :type jac_weighted_edges: [type], optional
+        :return: a 1D numpy array with lenght equal to nrows of input matrix 
+        :rtype: numpy.ndarray
+        """        
         self.nn_graph.simplify(combine_edges='sum')
         n_elements = self.data.shape[0]
         partition = leidenalg.find_partition(self.nn_graph, vertex_partition_method,
@@ -150,6 +184,17 @@ class Cluster:
         labels = np.asarray(partition.membership)
         return labels
     def run_louvain(self, vertex_partition_method, resolution,  jac_weighted_edges=None):
+        """Run louvain clustering data on built nn graph
+
+        :param vertex_partition_method: Quality function to optimize to find partitions. See leiden docs for more info 
+        :type vertex_partition_method: louvainalg.VertexPartition.MutableVertexPartition
+        :param resolution: Cluster resolution that roughly correlates with number of clusters
+        :type resolution: float
+        :param jac_weighted_edges: list of weights or name of edge attribute within NN graph , defaults to None
+        :type jac_weighted_edges: [type], optional
+        :return: a 1D numpy array with lenght equal to nrows of input matrix 
+        :rtype: numpy.ndarray
+        """
         self.nn_graph.simplify(combine_edges='sum')
         n_elements = self.data.shape[0]
         partition = louvain.find_partition(self.nn_graph, vertex_partition_method,
@@ -182,6 +227,28 @@ class Cluster:
         return labels 
 
 def run_clustering(reduction,alg,  res, k, perturb = False, local_pruning=False, global_pruning=False, min_cluster_size=10):
+    """Run clustering based on input parameters from start to finish
+
+    :param reduction: input data to cluster
+    :type reduction: numeric pandas DataFram
+    :param alg: clustering algorithmn,either ['louvain', 'leiden']
+    :type alg: str
+    :param res: cluster resolution (>0)
+    :type res: float
+    :param k: number of nearest neighbors to use for NN graph construction
+    :type k: int
+    :param perturb: run a perturbation experiment, defaults to False
+    :type perturb: bool, optional
+    :param local_pruning: run local pruning, defaults to False
+    :type local_pruning: bool, optional
+    :param global_pruning: run global pruning, defaults to False
+    :type global_pruning: bool, optional
+    :param min_cluster_size: clusters below this size are merged into closest cluster, defaults to 10
+    :type min_cluster_size: int, optional
+    :return: pandas DataFrame containing sample ids and cluster labels 
+    :rtype: pandas.DataFrame
+    """      
+    
     clu_obj = Cluster(data=reduction, knn=k,  nthreads=1)
     clu_obj.buildNeighborGraph(nn_space='l2', ef_construction=150,
                                local_pruning=local_pruning, global_pruning=global_pruning, jac_std_global='median')
