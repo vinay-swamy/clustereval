@@ -12,7 +12,7 @@ Welcome to clustereval's documentation!
    
    intro
    clustereval
-
+   modules
 
 
 Indices and tables
