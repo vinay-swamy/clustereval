@@ -11,13 +11,14 @@ use std::io::prelude::*;
 use glob::glob;
 use pyo3::prelude::*;
 use pyo3::wrap_pyfunction;
+use std::hash::Hash;
 
-#[derive(Debug)]
-struct ClusterResults {
-    barcodes:Vec<String>,
-    labels: Vec<String> , 
-    barcode_set:HashSet<String>,
-    grouped_barcodes: HashMap<String, HashSet<String>>,
+
+struct ClusterResults<T:Clone + Eq + Hash, U:Clone + Eq + Hash> {
+    barcodes:Vec<T>,
+    labels: Vec<U> , 
+    barcode_set:HashSet<T>,
+    grouped_barcodes: HashMap<U, HashSet<T>>,
     h_tot: f64,
     exp_name:String
 }
@@ -65,7 +66,7 @@ impl ExperimentResults{
     }
 }
 
-fn entropy(group_map: &HashMap<String, HashSet<String>>, labels:&Vec<String> ) -> f64{
+fn entropy <T, U> (group_map: &HashMap<U, HashSet<T>>, labels:&Vec<String> ) -> f64{
         let n = labels.len() as f64;
         let res: f64 = group_map.values().map(|i|{
             let p = i.len() as f64 /n;
@@ -74,13 +75,13 @@ fn entropy(group_map: &HashMap<String, HashSet<String>>, labels:&Vec<String> ) -
         return res * -1 as f64
     }
 
-impl ClusterResults{
-    fn new(barcodes:Vec<String>, labels: Vec<String>, exp_name: String) -> ClusterResults{
-        let barcode_set: HashSet<String> = HashSet::from_iter(barcodes.clone());
-        let mut grouped_barcodes:HashMap<String, HashSet<String>> = HashMap::new();
+impl <T:Clone + Eq + Hash, U:Clone + Eq + Hash> ClusterResults<T, U>{
+    fn new(barcodes:Vec<T>, labels: Vec<U>, exp_name: String) -> ClusterResults<T, U>{
+        let barcode_set: HashSet<T> = HashSet::from_iter(barcodes.clone());
+        let mut grouped_barcodes:HashMap<U, HashSet<T>> = HashMap::new();
         let mut old_label = &labels[0];
         let mut current_label = &labels[0];// declare out here so we can add the last set back in 
-        let mut current_set: HashSet<String> = HashSet::new();
+        let mut current_set: HashSet<T> = HashSet::new();
         for i in 0..barcodes.len(){
             current_label = &labels[i];
             let current_barcode = &barcodes[i];
@@ -88,7 +89,7 @@ impl ClusterResults{
                 current_set.insert(current_barcode.clone());
             }else{// reach a new cluster 
                 grouped_barcodes.insert(old_label.clone(), current_set);
-                let ns: HashSet<String> = HashSet::new();
+                let ns: HashSet<T> = HashSet::new();
                 current_set = ns;
                 current_set.insert(current_barcode.clone());
                 old_label = current_label;
@@ -98,10 +99,10 @@ impl ClusterResults{
         let h_tot = entropy(&grouped_barcodes, &labels);
         ClusterResults{barcodes, labels, barcode_set, grouped_barcodes, h_tot, exp_name}
     }
-    fn head(&self){
-        println!("{:?}", &self.barcodes[0..5]);
-        println!("{:?}", &self.labels[0..5])
-    }
+    // fn head(&self){
+    //     println!("{:?}", &self.barcodes[0..5]);
+    //     println!("{:?}", &self.labels[0..5])
+    // }
     
 }
 
