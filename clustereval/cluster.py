@@ -9,6 +9,7 @@ import os
 import sys
 import louvain
 
+
 def reassign_small_cluster_cells(labels, small_pop_list, small_cluster_list, neighbor_array):
     for small_cluster in small_pop_list:
         for single_cell in small_cluster:
@@ -28,7 +29,22 @@ def reassign_small_cluster_cells(labels, small_pop_list, small_cluster_list, nei
             labels[single_cell] = best_group
     return labels
 
-class Cluster:
+
+class SimpleMessager:
+    def __init__(self, name, verbosity):
+        self.name=name
+        if verbosity  > 0:
+            self.level = 'DEBUG'
+        else:
+            self.level = 'INFO'
+    
+    def message(self, message, level):
+        if level == self.level:
+            outstr = f'{self.name}:{self.level}:{message}'
+            print(outstr)
+
+
+class ClusterExperiment:
     """This is the main python class to do Nearest Neighbor(NN) graph-based clustering and run perturbation experiments.
     :param data: A numeric Pandas DataFrame to cluster. Theoretically could also be a 2D numpy array, but have not tested
     :type client: numeric Pandas DataFrame
@@ -37,15 +53,15 @@ class Cluster:
     :param nthreads: number of threads to use for NN graph creation
     :type nthreads: int
     """
-    def __init__(self, data, knn, nthreads):
-        self.knn = knn
+    def __init__(self, data, verbosity):
         self.data = data
-        self.nthreads = nthreads
-        self.random_seed=42
-        self.dist_std_local = 3
         self.time_smallpop = 15
+        self.step=0
+        self.m=SimpleMessager('ClusterExperiment', verbosity)
 
-    def make_csrmatrix_noselfloop(self, neighbor_array, distance_array, local_pruning):
+        
+
+    def make_csrmatrix_noselfloop(self, neighbor_array, distance_array, local_pruning, dist_std_local):
         # neighbor array not listed in in any order of proximity
         row_list = []
         col_list = []
@@ -56,13 +72,12 @@ class Cluster:
         discard_count = 0
         # locally prune based on (squared) l2 distance
         if local_pruning:
-            print('commencing local pruning based on Euclidean distance metric at',
-                  self.dist_std_local, 's.dev above mean')
+            self.m.message('Running Local edge pruning', 'DEBUG')
             distance_array = distance_array + 0.1
             for row in neighbor_array:
                 distlist = distance_array[rowi, :]
                 to_keep = np.where(distlist < np.mean(
-                    distlist) + self.dist_std_local * np.std(distlist))[0]  # 0*std
+                    distlist) + dist_std_local * np.std(distlist))[0]  # 0*std
                 updated_nn_ind = row[np.ix_(to_keep)]
                 updated_nn_weights = distlist[np.ix_(to_keep)]
                 discard_count = discard_count + (n_neighbors - len(to_keep))
@@ -83,7 +98,7 @@ class Cluster:
                                shape=(n_cells, n_cells))
         return csr_graph
 
-    def buildNeighborGraph(self, nn_space, ef_construction, local_pruning, global_pruning, jac_std_global):
+    def buildNeighborGraph(self, knn, nn_space, ef_construction, local_pruning, global_pruning, jac_std_global, dist_std_local, nthreads=1):
         """Build an approximate nearest neighbor graph from input data. Implements local and global edge pruning methods from PARC.
 
         :param nn_space: distance metric to use for graph creation. one of ['l2', 'ip', 'cosine']
@@ -97,11 +112,13 @@ class Cluster:
         :param jac_std_global: CHANGEME Not totally sure tbh, need to look into it more 
         :type jac_std_global: str
         """        
-        ef_query = max(100, self.knn + 1)
+        self.m.message('Building NN graph', 'DEBUG')
+        ef_query = max(100, knn + 1)
         num_dims = self.data.shape[1]
         n_elements = self.data.shape[0]
         p = hnswlib.Index(space=nn_space, dim=num_dims)
-        p.set_num_threads(self.nthreads)
+        p.set_num_threads(nthreads)
+
         if (num_dims > 30) & (n_elements <= 50000):
             p.init_index(max_elements=n_elements, ef_construction=ef_construction,
                              M=48)  # good for scRNA seq where dimensionality is high
@@ -110,15 +127,16 @@ class Cluster:
         
         p.add_items(self.data)
         p.set_ef(ef_query)
-        neighbor_array, distance_array = p.knn_query(self.data, self.knn)
-        csr_array = self.make_csrmatrix_noselfloop(neighbor_array, distance_array, local_pruning)
+        neighbor_array, distance_array = p.knn_query(self.data, knn)
+        csr_array = self.make_csrmatrix_noselfloop(
+            neighbor_array, distance_array, local_pruning, dist_std_local)
         self.neighbor_array = neighbor_array
         sources, targets = csr_array.nonzero()
 
         edgelist = list(zip(sources, targets))
         nn_graph = ig.Graph(edgelist, edge_attrs={'weight': csr_array.data.tolist()})
         if global_pruning:
-            print("Running global pruning")
+            self.m.message('Running Global Edge Pruning', 'DEBUG')
             n_elements = self.data.shape[0]
             edgelist_copy = edgelist.copy()
             sim_list = nn_graph.similarity_jaccard(pairs=edgelist_copy)
@@ -139,12 +157,17 @@ class Cluster:
         return
 
 
-    def run_perturbation(self):
-        """Run Perturbation experiments descibed in ... CHANGEME: expose edge removal/addition sampling frac and weight noise range
-        """        
+    def run_perturbation(self, edge_permut_frac, weight_permut_range):
+        """Run Perturbation experiments descibed in ... Chosen fraction of edges are removed, then same number of edges are randomly added between vertices. Each edge is then multiplied by a noise factor sampled from a uniform distribution of choseen range
 
+        :param edge_permut_frac: fraction of edges to randomly remove and add
+        :type edge_permut_frac: float
+        :param weight_permut_range: range to uniformly sample from to permute edge weights
+        :type weight_permut_range: [type]
+        """    
+        self.m.message('Running Perturbation', 'DEBUG')
         graph = self.nn_graph
-        sub_sample_size = int(len(graph.es) * .05)
+        sub_sample_size = int(len(graph.es) * edge_permut_frac)
         edges_to_remove = np.random.choice(
             list(range(len(graph.es))), size=sub_sample_size, replace=False)
 
@@ -156,13 +179,15 @@ class Cluster:
 
         ### add noise to edge weights
         old_weights = np.asarray(graph.es['weight'])
-        new_weights = np.where(old_weights == None, 1, old_weights) * np.random.uniform(.6, 1.66, len(old_weights))
+        new_weights = np.where(old_weights == None, 1, old_weights) * \
+            np.random.uniform(
+                weight_permut_range[0], weight_permut_range[1], len(old_weights))
         graph.es['weight'] = new_weights
         self.nn_graph = graph
         return
 
 
-    def run_leiden(self, vertex_partition_method, n_iter, resolution, jac_weighted_edges=None):
+    def run_leiden(self, vertex_partition_method, n_iter, resolution, jac_weighted_edges=None, seed=None):
         """Run leiden clustering data on built nn graph
 
         :param vertex_partition_method: Quality function to optimize to find partitions. See leiden docs for more info 
@@ -176,14 +201,15 @@ class Cluster:
         :return: a 1D numpy array with lenght equal to nrows of input matrix 
         :rtype: numpy.ndarray
         """        
+        self.m.message('Running Leiden clustering', 'DEBUG')
         self.nn_graph.simplify(combine_edges='sum')
         n_elements = self.data.shape[0]
         partition = leidenalg.find_partition(self.nn_graph, vertex_partition_method,
                                              weights=jac_weighted_edges, n_iterations=n_iter, 
-                                             resolution_parameter = resolution, seed=self.random_seed)
+                                             resolution_parameter = resolution, seed=seed)
         labels = np.asarray(partition.membership)
         return labels
-    def run_louvain(self, vertex_partition_method, resolution,  jac_weighted_edges=None):
+    def run_louvain(self, vertex_partition_method, resolution,  jac_weighted_edges=None, seed=None):
         """Run louvain clustering data on built nn graph
 
         :param vertex_partition_method: Quality function to optimize to find partitions. See leiden docs for more info 
@@ -195,16 +221,18 @@ class Cluster:
         :return: a 1D numpy array with lenght equal to nrows of input matrix 
         :rtype: numpy.ndarray
         """
+        self.m.message('Running Louvain clustering', 'DEBUG')
         self.nn_graph.simplify(combine_edges='sum')
         n_elements = self.data.shape[0]
         partition = louvain.find_partition(self.nn_graph, vertex_partition_method,
                                              weights=jac_weighted_edges, 
-                                             resolution_parameter = resolution, seed=self.random_seed)
+                                             resolution_parameter = resolution, seed=seed)
         labels = np.asarray(partition.membership)
         
         return labels
 
     def merge_singletons(self, labels, small_pop ):
+        self.m.message('Merging small clustering', 'DEBUG')
         n_elements = self.data.shape[0]
         
         labels = np.reshape(labels, ( n_elements, 1))
@@ -226,7 +254,7 @@ class Cluster:
             labels = reassign_small_cluster_cells(labels, small_pop_list, small_cluster_list, self.neighbor_array)
         return labels 
 
-def run_clustering(reduction,alg,  res, k, perturb = False, local_pruning=False, global_pruning=False, min_cluster_size=10):
+def run_clustering(reduction,alg,  res, k, perturb = False, local_pruning=False, global_pruning=False, min_cluster_size=10, verbosity=1):
     """Run clustering based on input parameters from start to finish
 
     :param reduction: input data to cluster
@@ -249,11 +277,11 @@ def run_clustering(reduction,alg,  res, k, perturb = False, local_pruning=False,
     :rtype: pandas.DataFrame
     """      
     
-    clu_obj = Cluster(data=reduction, knn=k,  nthreads=1)
-    clu_obj.buildNeighborGraph(nn_space='l2', ef_construction=150,
-                               local_pruning=local_pruning, global_pruning=global_pruning, jac_std_global='median')
+    clu_obj = ClusterExperiment(data=reduction, verbosity=verbosity)
+    clu_obj.buildNeighborGraph(knn=k, nn_space='l2', ef_construction=150,
+                               local_pruning=local_pruning, global_pruning=global_pruning, jac_std_global='median', dist_std_local = 3)
     if perturb:
-        clu_obj.run_perturbation()
+        clu_obj.run_perturbation(.05, (.6, 1.66))
     
     if alg == 'louvain':
         labels = clu_obj.run_louvain(
@@ -271,7 +299,9 @@ def run_clustering(reduction,alg,  res, k, perturb = False, local_pruning=False,
     else:
         print('BAD ALG')
         raise NotImplementedError
-    labels_corrected = clu_obj.merge_singletons(labels, min_cluster_size)
+    
+    if min_cluster_size > 1:
+        labels = clu_obj.merge_singletons(labels, min_cluster_size)
     outdf = pd.DataFrame(
-        {"Barcode": list(reduction.index), 'labels': labels_corrected}).sort_values('labels')
+        {"Barcode": list(reduction.index), 'labels': labels}).sort_values('labels')
     return outdf

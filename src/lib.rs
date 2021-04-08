@@ -218,8 +218,10 @@ fn pairwise_metric_calculation_fromdisk(file_glob: &str, nthreads:usize) -> Vec<
                                          return read_cluster_results(&file)}
                                         )
                                 .collect();
+    if test_clusters_objs.len() == 0{
+        panic!("The provided glob string did not match any files!!")
+    }
     
-
     let test_cluster_refs: Vec<&ClusterResults> = test_clusters_objs.iter().collect();
     let c_res :Vec<ExperimentResults> = run_pairwise_calculation_threaded(&test_cluster_refs, nthreads);
     return c_res
