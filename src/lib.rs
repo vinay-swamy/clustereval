@@ -153,7 +153,11 @@ fn calculate_metrics(ref_cluster:&ClusterResults, query_clusters: &Vec<&ClusterR
     let mut purity_results = Array2::<f64>::zeros(( ref_cluster.grouped_barcodes.len() ,query_clusters.len() ));
     for (i, cluster) in ref_cluster.grouped_barcodes.values().enumerate(){
         for (j,  experiment) in query_clusters.iter().enumerate() {
-            stability_results[[i, j]]= stability_k(&cluster, &experiment) / experiment.h_tot ; 
+            let mut stab = stability_k(&cluster, &experiment) / experiment.h_tot ; 
+            if stab.is_nan(){// cant compare a naturally occuring NAN to f64::NAN
+                stab = 1.0;
+            }
+            stability_results[[i, j]]= stab ; 
             purity_results[[i,j]] = purity_k(&cluster, &experiment.grouped_barcodes)
         }
 
@@ -161,7 +165,7 @@ fn calculate_metrics(ref_cluster:&ClusterResults, query_clusters: &Vec<&ClusterR
     let stability_scores = stability_results.rows().into_iter().map(|x| 1.0 - x.mean().unwrap()).collect::<Vec<f64>>();
     let purity_scores = purity_results.rows().into_iter().map( |x| {
         let mut v = x.to_vec();
-        v.retain(|x| *x != f64::NAN);
+        v.retain(|x| *x != f64::NAN); // in purity_k f64::NAN is explicitly returned, so this works. Consider changing for conistency
         return vmean(v) 
     } ).collect::<Vec<f64>>();   
     let cluster_ids: Vec<String> = ref_cluster.grouped_barcodes.keys().cloned().collect::<Vec<String>>() ;
