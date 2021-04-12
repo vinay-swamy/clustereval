@@ -12,9 +12,14 @@ use glob::glob;
 use pyo3::prelude::*;
 use pyo3::wrap_pyfunction;
 use std::hash::Hash;
+use std::fmt::Display; 
+use std::string::ToString;
 
-
-struct ClusterResults<T:Clone + Eq + Hash, U:Clone + Eq + Hash> {
+struct ClusterResults<T, U> 
+where
+    T:Clone + Eq + Hash + Default + NA<T> + Sync + Display,  
+    U:Clone + Eq + Hash + Default + NA<U> + Sync + Display
+{
     barcodes:Vec<T>,
     labels: Vec<U> , 
     barcode_set:HashSet<T>,
@@ -34,6 +39,9 @@ struct ExperimentResults{
     #[pyo3(get)]
     purity_scores:Vec<f64>
 }
+
+
+
 
 
 impl ExperimentResults{
@@ -66,7 +74,11 @@ impl ExperimentResults{
     }
 }
 
-fn entropy <T, U> (group_map: &HashMap<U, HashSet<T>>, labels:&Vec<String> ) -> f64{
+fn entropy<T, U>(group_map: &HashMap<U, HashSet<T>>, labels:&Vec<U> ) -> f64
+where
+    T:Clone + Eq + Hash + Default + NA<T> + Sync + Display,  
+    U:Clone + Eq + Hash + Default + NA<U> + Sync + Display
+{
         let n = labels.len() as f64;
         let res: f64 = group_map.values().map(|i|{
             let p = i.len() as f64 /n;
@@ -75,7 +87,11 @@ fn entropy <T, U> (group_map: &HashMap<U, HashSet<T>>, labels:&Vec<String> ) -> 
         return res * -1 as f64
     }
 
-impl <T:Clone + Eq + Hash, U:Clone + Eq + Hash> ClusterResults<T, U>{
+impl<T, U> ClusterResults<T, U>
+where
+    T:Clone + Eq + Hash + Default + NA<T> + Sync + Display,  
+    U:Clone + Eq + Hash + Default + NA<U> + Sync + Display
+{
     fn new(barcodes:Vec<T>, labels: Vec<U>, exp_name: String) -> ClusterResults<T, U>{
         let barcode_set: HashSet<T> = HashSet::from_iter(barcodes.clone());
         let mut grouped_barcodes:HashMap<U, HashSet<T>> = HashMap::new();
@@ -106,13 +122,18 @@ impl <T:Clone + Eq + Hash, U:Clone + Eq + Hash> ClusterResults<T, U>{
     
 }
 
-fn stability_k(ref_bc: &HashSet<String>, query:&ClusterResults) -> f64{
-        let intersect: HashSet<String> = ref_bc.intersection(&query.barcode_set).cloned().collect::<HashSet<String>>();
+fn stability_k <T, U>(ref_bc: &HashSet<T>, query:&ClusterResults<T, U>) -> f64
+where
+    T:Clone + Eq + Hash + Default + NA<T> + Sync + Display,  
+    U:Clone + Eq + Hash + Default + NA<U> + Sync + Display
+
+{
+        let intersect: HashSet<T> = ref_bc.intersection(&query.barcode_set).cloned().collect::<HashSet<T>>();
         if intersect.len() == 0{
             return 0.0
         } else{
-            let mut new_bc :Vec<String> = vec![String::new(); intersect.len()];
-            let mut new_labels : Vec<String> = vec![String::new(); intersect.len()];
+            let mut new_bc :Vec<T> = vec![T::default(); intersect.len()];
+            let mut new_labels : Vec<U> = vec![U::default(); intersect.len()];
             let mut j=0;
             for i in 0..query.barcodes.len(){
                 if intersect.contains(&query.barcodes[i]){
@@ -125,6 +146,7 @@ fn stability_k(ref_bc: &HashSet<String>, query:&ClusterResults) -> f64{
             return entropy(&new_clu.grouped_barcodes, &new_clu.labels);
         }
     }
+
 fn decode_reader(bytes: Vec<u8>) -> std::io::Result<String> {
    let mut gz = GzDecoder::new(&bytes[..]);
    let mut s = String::new();
@@ -132,7 +154,7 @@ fn decode_reader(bytes: Vec<u8>) -> std::io::Result<String> {
    Ok(s)
 }
 
-fn read_cluster_results( file: &str) ->ClusterResults {
+fn read_cluster_results ( file: &str) ->ClusterResults<String, String> {
     let mut handle = fs::File::open(file).expect("Bad file input");
     let mut buffer  = Vec::new();
     handle.read_to_end(&mut buffer).expect("couldnt read file");
@@ -149,7 +171,61 @@ fn read_cluster_results( file: &str) ->ClusterResults {
     ClusterResults::new(barcodes,labels, String::from(exp_name))
 }
 
-fn calculate_metrics(ref_cluster:&ClusterResults, query_clusters: &Vec<&ClusterResults>) -> ExperimentResults{
+fn vmean(v:Vec<f64>) -> f64{
+ return v.iter().sum::<f64>() / v.len() as f64
+
+}
+
+trait NA<T>{
+    fn na() -> T;
+}
+impl NA<String> for String{
+    fn na() ->String{
+        return String::from("NA")
+    }
+}
+
+impl NA<f64> for f64{
+    fn na() ->f64{
+        return f64::NAN
+    }
+}
+impl NA<i64> for i64{
+    //lets just hope that no one ever assigns -1 to a cluster ID
+    fn na()->i64{
+        return -123456
+    }
+}
+
+fn purity_k<T, U>(ref_bc_set: &HashSet<T>, query_map: &HashMap<U, HashSet<T>>) -> f64
+where
+    T:Clone + Eq + Hash + Default + NA<T> + Sync + Display,  
+    U:Clone + Eq + Hash + Default + NA<U> + Sync + Display
+
+{
+    let mut max_overlap = 0;
+    let mut max_overlap_key = &U::na();
+    for query_key in query_map.keys(){
+        let q_cluster_set = query_map.get(query_key).unwrap();
+        let overlap = ref_bc_set.intersection(q_cluster_set).count();
+        if overlap > max_overlap{
+            max_overlap = overlap;
+            max_overlap_key = query_key;
+        }
+    }
+    if max_overlap_key == &U::na(){
+        return f64::NAN;
+    } else{
+        return max_overlap as f64 / query_map.get(max_overlap_key).unwrap().len() as f64
+    }
+}
+
+
+fn calculate_metrics <T, U> (ref_cluster:&ClusterResults<T, U>, query_clusters: &Vec<&ClusterResults<T, U>>) -> ExperimentResults
+where
+    T:Clone + Eq + Hash + Default + NA<T> + Sync + Display,  
+    U:Clone + Eq + Hash + Default + NA<U> + Sync + Display
+{
     let mut stability_results = Array2::<f64>::zeros(( ref_cluster.grouped_barcodes.len() ,query_clusters.len() ));
     let mut purity_results = Array2::<f64>::zeros(( ref_cluster.grouped_barcodes.len() ,query_clusters.len() ));
     for (i, cluster) in ref_cluster.grouped_barcodes.values().enumerate(){
@@ -165,35 +241,19 @@ fn calculate_metrics(ref_cluster:&ClusterResults, query_clusters: &Vec<&ClusterR
         v.retain(|x| *x != f64::NAN);
         return vmean(v) 
     } ).collect::<Vec<f64>>();   
-    let cluster_ids: Vec<String> = ref_cluster.grouped_barcodes.keys().cloned().collect::<Vec<String>>() ;
+    let cluster_ids: Vec<String> = ref_cluster.grouped_barcodes.keys().cloned().map(|x:U| x.to_string()).collect::<Vec<String>>() ;
     let exp_param = ref_cluster.exp_name.clone();
     return ExperimentResults{ exp_param,cluster_ids, stability_scores, purity_scores }
 }
 
-fn vmean(v:Vec<f64>) -> f64{
- return v.iter().sum::<f64>() / v.len() as f64
 
-}
 
-fn purity_k(ref_bc_set: &HashSet<String>, query_map: &HashMap<String, HashSet<String>>) -> f64{
-    let mut max_overlap = 0;
-    let mut max_overlap_key = &String::from("NA");
-    for query_key in query_map.keys(){
-        let q_cluster_set = query_map.get(query_key).unwrap();
-        let overlap = ref_bc_set.intersection(q_cluster_set).count();
-        if overlap > max_overlap{
-            max_overlap = overlap;
-            max_overlap_key = query_key;
-        }
-    }
-    if max_overlap_key == &String::from("NA"){
-        return f64::NAN;
-    } else{
-        return max_overlap as f64 / query_map.get(max_overlap_key).unwrap().len() as f64
-    }
-}
+fn run_pairwise_calculation_threaded<T, U>(experiment_list:&Vec<&ClusterResults<T, U>>, nthreads:usize) ->Vec<ExperimentResults>
+where
+    T:Clone + Eq + Hash + Default + NA<T> + Sync + Display,  
+    U:Clone + Eq + Hash + Default + NA<U> + Sync + Display
+{
 
-fn run_pairwise_calculation_threaded(experiment_list:&Vec<&ClusterResults>, nthreads:usize) ->Vec<ExperimentResults>{
     
     let pool = rayon::ThreadPoolBuilder::new().num_threads(nthreads).build().unwrap();
     let dummy_array: Vec<usize> = (0..experiment_list.len()).collect();
@@ -213,7 +273,7 @@ fn run_pairwise_calculation_threaded(experiment_list:&Vec<&ClusterResults>, nthr
 
 #[pyfunction]
 fn pairwise_metric_calculation_fromdisk(file_glob: &str, nthreads:usize) -> Vec<ExperimentResults> {
-    let test_clusters_objs:Vec<ClusterResults> = glob(file_glob)
+    let test_clusters_objs:Vec<ClusterResults<String, String>> = glob(file_glob)
                                 .expect("Failed to read glob pattern")
                                 .map(|x|{let file =  String::from(x.unwrap().to_str().expect("Failed to unwrap filename"));
                                          return read_cluster_results(&file)}
@@ -223,12 +283,15 @@ fn pairwise_metric_calculation_fromdisk(file_glob: &str, nthreads:usize) -> Vec<
         panic!("The provided glob string did not match any files!!")
     }
     
-    let test_cluster_refs: Vec<&ClusterResults> = test_clusters_objs.iter().collect();
+    let test_cluster_refs: Vec<&ClusterResults<String, String>> = test_clusters_objs.iter().collect();
     let c_res :Vec<ExperimentResults> = run_pairwise_calculation_threaded(&test_cluster_refs, nthreads);
     return c_res
 }
 
-#[pyfunction]
+
+
+
+
 fn pairwise_metric_calculation_frommem(mut cluster_dfs: Vec<HashMap<String, Vec<String>>>, exp_names:Vec<String>, nthreads:usize) -> Vec<ExperimentResults> {
     let clusters_objs_owned = cluster_dfs.into_iter().enumerate().map(|(i, mut x)|ClusterResults::new(x.remove(&String::from("Barcode")).unwrap(), 
                                                                             x.remove(&String::from("labels")).unwrap(), 
