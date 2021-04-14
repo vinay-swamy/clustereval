@@ -1,0 +1,101 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+
+
+```{r}
+library(tidyverse)
+library(patchwork)
+n =100
+df <- bind_rows(
+    tibble(x= rnorm(n, 5), y=rnorm(n, 5), clustering_1 = 'A'),
+    tibble(x= rnorm(n, -5), y=rnorm(n, 5), clustering_1 = 'B'),
+    tibble(x= rnorm(n, -5), y=rnorm(n, -5), clustering_1 = 'C')
+
+)
+
+main_clu <- ggplot(df) + 
+    geom_point(aes(x=x, y=y, color=clustering_1), size = 3) + 
+    xlab('')+
+    ylab('')+
+    ggtitle('reference')+
+    theme_minimal()
+
+merge_df <- df
+merge_df[merge_df$clustering_1 == 'C',]$x <- rnorm(n, 5)
+merge_df[merge_df$clustering_1 == 'C',]$y <- rnorm(n, 5)
+
+merge_clu <- ggplot(merge_df) + 
+    geom_point(aes(x=x, y=y, color=clustering_1), size = 3) + 
+    xlab('')+
+    ylab('')+
+    ggtitle('Stable, but not Pure')+
+    theme_minimal()
+
+
+split_df <- df 
+split_df$x[251:300] <- rnorm(50, 5)
+split_df$y[251:300] <- rnorm(50, -5)
+split_df$clustering_2A <-  c(rep('1', 100),rep('2', 100), rep('3', 50), rep('4', 50) )
+split_clu <- ggplot(split_df) + 
+    geom_point(aes(x=x, y=y, color=clustering_1), size = 3) + 
+    xlab('')+
+    ylab('')+
+    ggtitle('Pure, but not Stable')+
+    theme_minimal()
+
+
+prom_df <-df[c(1:74, 100:174,200:275),  ] %>% 
+    mutate(clustering_2B =c(rep('1', 75),rep('2', 75), rep('3', 75) ) )
+prom_df <- bind_rows(prom_df, 
+                     tibble(x=rnorm(75, 5), y= rnorm(75, -5),
+                     clustering_1 = sample(c('A','B','C'), 75,  replace = T), clustering_2B = '4' )
+                    )
+prom_clu <- ggplot(prom_df) + 
+    geom_point(aes(x=x, y=y, color=clustering_1), size = 3) + 
+    xlab('')+
+    ylab('')+
+    ggtitle('Not pure not Stable')+
+    theme_minimal()
+
+
+
+
+(main_clu + merge_clu) / ( split_clu | prom_clu) +plot_layout(guides='collect', ) & theme_bw() & 
+    #geom_vline(xintercept = 0)& geom_hline(yintercept = 0) & 
+    xlim(c(-10, 10)) & ylim(c(-10,10)) 
+
+
+```
+
+
+```{r}
+n=100
+r=16
+example_df <- bind_rows(
+    tibble(x= rnorm(n, 0), y=rnorm(n, r), clustering_1 = 'A'),
+    tibble(x= rnorm(n, r/2), y=rnorm(n, r/2), clustering_1 = 'A'),
+    tibble(x= rnorm(n, r), y=rnorm(n, 0), clustering_1 = 'A'),
+    tibble(x= rnorm(n, r/2), y=rnorm(n, -r/2), clustering_1 = 'A'),
+    tibble(x= rnorm(n, 0), y=rnorm(n, -r), clustering_1 = 'A'),
+    tibble(x= rnorm(n, -r/2), y=rnorm(n, -r/2), clustering_1 = 'A'),
+    tibble(x= rnorm(n, -r), y=rnorm(n, 0), clustering_1 = 'A'),
+    tibble(x= rnorm(n, -r/2), y=rnorm(n, r/2), clustering_1 = 'A'),
+)
+
+
+ggplot(example_df) + 
+    geom_point(aes(x=x, y=y))
+
+```
+
+
+
+
+
+
+
+
