@@ -6,7 +6,8 @@ import clustereval as ce
 @pytest.fixture
 def clus():
     data= pd.read_csv('clustereval/data/testdata.csv.gz', index_col=0)
-    clus = [ce.cluster.run_clustering(data, 'louvain',  1.0, i, perturb=True, local_pruning=False,
+    clus = [ce.cluster.run_clustering(data, 'louvain',  1.0, i, perturb=True, edge_permut_frac=.5,
+                                      weight_permut_range=(.6, 1.6), local_pruning=False,
                                       global_pruning=False, min_cluster_size=10, verbosity=1) for i in range(30, 60, 5)]
     return clus
 

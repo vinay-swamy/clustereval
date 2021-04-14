@@ -157,32 +157,47 @@ class ClusterExperiment:
         return
 
 
-    def run_perturbation(self, edge_permut_frac, weight_permut_range):
+    def run_perturbation(self, edge_permut_frac=None, weight_permut_range=None):
         """Run Perturbation experiments descibed in ... Chosen fraction of edges are removed, then same number of edges are randomly added between vertices. Each edge is then multiplied by a noise factor sampled from a uniform distribution of choseen range
 
         :param edge_permut_frac: fraction of edges to randomly remove and add
         :type edge_permut_frac: float
         :param weight_permut_range: range to uniformly sample from to permute edge weights
         :type weight_permut_range: [type]
-        """    
+        """ 
+        if (edge_permut_frac is None) and (weight_permut_range is None):    
+            self.m.message('Perturbation run with no parameters', 'INFO')
+            raise NotImplementedError
         self.m.message('Running Perturbation', 'DEBUG')
         graph = self.nn_graph
-        sub_sample_size = int(len(graph.es) * edge_permut_frac)
-        edges_to_remove = np.random.choice(
-            list(range(len(graph.es))), size=sub_sample_size, replace=False)
+        if edge_permut_frac is not None:
+            self.m.message('Add/Remove edges', 'DEBUG')
+            old_weights = np.asarray(graph.es['weight'])
+            sub_sample_size = int(len(graph.es) * edge_permut_frac)
+            edges_to_remove = np.random.choice(
+                list(range(len(graph.es))), size=sub_sample_size, replace=False)
 
-        i = list(range(len(graph.vs)))
-        edges_to_add = np.random.choice(i, size=(sub_sample_size, 2), replace=True)
+            i = list(range(len(graph.vs)))
+            edges_to_add = np.random.choice(i, size=(sub_sample_size, 2), replace=True)
+            graph.delete_edges(edges_to_remove)
+            graph.add_edges(edges_to_add)
+            if weight_permut_range is None:
+                old_weights_permuted = np.random.choice(old_weights, len(old_weights))
+                new_weights =  np.where(old_weights != None, old_weights, old_weights_permuted)
+                # where old weights is not none, keep values from old weights, or when it is none, use new weights
+                
+                graph.es['weight'] = new_weights
 
-        graph.delete_edges(edges_to_remove)
-        graph.add_edges(edges_to_add)
 
         ### add noise to edge weights
-        old_weights = np.asarray(graph.es['weight'])
-        new_weights = np.where(old_weights == None, 1, old_weights) * \
-            np.random.uniform(
-                weight_permut_range[0], weight_permut_range[1], len(old_weights))
-        graph.es['weight'] = new_weights
+        if weight_permut_range is not None:
+            self.m.message('Add weight noise', 'DEBUG')
+            old_weights = np.asarray(graph.es['weight'])
+            # where old_weights is none, keep 1, and where its not none return old weights 
+            new_weights = np.where(old_weights == None, 1, old_weights) * \
+                np.random.uniform(
+                    weight_permut_range[0], weight_permut_range[1], len(old_weights))
+            graph.es['weight'] = new_weights
         self.nn_graph = graph
         return
 
@@ -254,7 +269,7 @@ class ClusterExperiment:
             labels = reassign_small_cluster_cells(labels, small_pop_list, small_cluster_list, self.neighbor_array)
         return labels 
 
-def run_clustering(reduction,alg,  res, k, perturb = False, local_pruning=False, global_pruning=False, min_cluster_size=10, verbosity=1):
+def run_clustering(reduction,alg,  res, k, perturb = False,edge_permut_frac=None, weight_permut_range=None, local_pruning=False, global_pruning=False, min_cluster_size=10, verbosity=1):
     """Run clustering based on input parameters from start to finish
 
     :param reduction: input data to cluster
@@ -281,7 +296,7 @@ def run_clustering(reduction,alg,  res, k, perturb = False, local_pruning=False,
     clu_obj.buildNeighborGraph(knn=k, nn_space='l2', ef_construction=150,
                                local_pruning=local_pruning, global_pruning=global_pruning, jac_std_global='median', dist_std_local = 3)
     if perturb:
-        clu_obj.run_perturbation(.05, (.6, 1.66))
+        clu_obj.run_perturbation(edge_permut_frac, weight_permut_range)
     
     if alg == 'louvain':
         labels = clu_obj.run_louvain(
