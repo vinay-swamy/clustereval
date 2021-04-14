@@ -8,11 +8,13 @@
 		"cpus-per-task": "4",
 		"extra" : "",
 		"output"  : "00log/{rule}_{wildcards}.out",
-		"error" : "00log/{rule}_{wildcards}.err" 
+		"error" : "00log/{rule}_{wildcards}.err",
+		"debug" :"sh_out/{rule}_{wildcards}.sh" 
 	},
 	"calculate_parameter_exp_metrics" :
 	{
-		"cpus-per-task": "4"
+		"cpus-per-task": "16",
+		"mem": "80G"
 	}
 
 }	
