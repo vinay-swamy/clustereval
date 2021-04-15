@@ -37,12 +37,15 @@ class SimpleMessager:
             self.level = 'DEBUG'
         else:
             self.level = 'INFO'
+        self.always_print = set(['WARNING', 'ERROR'])
     
     def message(self, message, level):
-        if level == self.level:
-            outstr = f'{self.name}:{self.level}:{message}'
+        if (level == self.level) or (level in self.always_print):
+            outstr = f'{self.name}:{level}:{message}'
             print(outstr)
 
+class DuplicateRowError(Exception):
+    pass
 
 class ClusterExperiment:
     """This is the main python class to do Nearest Neighbor(NN) graph-based clustering and run perturbation experiments.
@@ -59,44 +62,7 @@ class ClusterExperiment:
         self.step=0
         self.m=SimpleMessager('ClusterExperiment', verbosity)
 
-        
-
-    def make_csrmatrix_noselfloop(self, neighbor_array, distance_array, local_pruning, dist_std_local):
-        # neighbor array not listed in in any order of proximity
-        row_list = []
-        col_list = []
-        weight_list = []
-        n_neighbors = neighbor_array.shape[1]
-        n_cells = neighbor_array.shape[0]
-        rowi = 0
-        discard_count = 0
-        # locally prune based on (squared) l2 distance
-        if local_pruning:
-            self.m.message('Running Local edge pruning', 'DEBUG')
-            distance_array = distance_array + 0.1
-            for row in neighbor_array:
-                distlist = distance_array[rowi, :]
-                to_keep = np.where(distlist < np.mean(
-                    distlist) + dist_std_local * np.std(distlist))[0]  # 0*std
-                updated_nn_ind = row[np.ix_(to_keep)]
-                updated_nn_weights = distlist[np.ix_(to_keep)]
-                discard_count = discard_count + (n_neighbors - len(to_keep))
-                for ik in range(len(updated_nn_ind)):
-                    if rowi != row[ik]:  # remove self-loops
-                        row_list.append(rowi)
-                        col_list.append(updated_nn_ind[ik])
-                        dist = np.sqrt(updated_nn_weights[ik])
-                        weight_list.append(1/(dist+0.1))
-                rowi = rowi + 1
-        else:  # dont prune based on distance
-            row_list.extend(list(np.transpose(
-                np.ones((n_neighbors, n_cells)) * range(0, n_cells)).flatten()))
-            col_list = neighbor_array.flatten().tolist()
-            weight_list = (1. / (distance_array.flatten() + 0.1)).tolist()
-
-        csr_graph = csr_matrix((np.array(weight_list), (np.array(row_list), np.array(col_list))),
-                               shape=(n_cells, n_cells))
-        return csr_graph
+    
 
     def buildNeighborGraph(self, knn, nn_space, ef_construction, local_pruning, global_pruning, jac_std_global, dist_std_local, nthreads=1):
         """Build an approximate nearest neighbor graph from input data. Implements local and global edge pruning methods from PARC.
@@ -128,20 +94,39 @@ class ClusterExperiment:
         p.add_items(self.data)
         p.set_ef(ef_query)
         neighbor_array, distance_array = p.knn_query(self.data, knn)
-        csr_array = self.make_csrmatrix_noselfloop(
-            neighbor_array, distance_array, local_pruning, dist_std_local)
+        n_neighbors = neighbor_array.shape[1]
+        n_cells = neighbor_array.shape[0]
+        
+        if np.sum(distance_array[:,1:] ==0) > 0:
+            self.m.message('There are likely duplicate rows in the input data. remove and re-try', 'ERROR')
+            raise DuplicateRowError
+
+        if local_pruning:
+            # for each cell, keep cells that are below dist_std_local standard deviations from mean 
+            # for cells above threshold, set to 0. Then, when we select non-zero values from the sparse matrix
+            # these pruned values will be dropped
+            row_thresh = np.mean(distance_array, axis=1)  + dist_std_local * np.std(distance_array, axis = 1)
+            keep_cells = distance_array < row_thresh[:,None]
+            distance_array = np.where(keep_cells, distance_array, 0)
+    
+        row_list = np.transpose( np.ones((n_neighbors, n_cells)) * range(0, n_cells)).flatten()
+        col_list = neighbor_array.flatten()
+        weight_list = distance_array.flatten()# distance array will be 0 at loops
+        csr_array = csr_matrix((weight_list, (row_list, col_list)),
+                               shape=(n_cells, n_cells))
         self.neighbor_array = neighbor_array
         sources, targets = csr_array.nonzero()
 
         edgelist = list(zip(sources, targets))
-        nn_graph = ig.Graph(edgelist, edge_attrs={'weight': csr_array.data.tolist()})
+        nn_graph = ig.Graph(edgelist)
+        edgelist_copy = edgelist.copy()
+        edge_list_copy_array = np.asarray(edgelist_copy)
+        sim_list = nn_graph.similarity_jaccard(pairs=edgelist_copy)
+        sim_list_array = np.asarray(sim_list)
+
         if global_pruning:
             self.m.message('Running Global Edge Pruning', 'DEBUG')
             n_elements = self.data.shape[0]
-            edgelist_copy = edgelist.copy()
-            sim_list = nn_graph.similarity_jaccard(pairs=edgelist_copy)
-            sim_list_array = np.asarray(sim_list)
-            edge_list_copy_array = np.asarray(edgelist_copy)
             if jac_std_global == 'median':
                 threshold = np.median(sim_list)
             else:
@@ -152,6 +137,9 @@ class ClusterExperiment:
 
             nn_graph = ig.Graph(n=n_elements, edges=list(new_edgelist),
                             edge_attrs={'weight': sim_list_new})
+        else:
+            nn_graph = nn_graph = ig.Graph(
+                edgelist, edge_attrs={'weight': sim_list_array})
             # print('Share of edges kept after Global Pruning %.2f' % (len(strong_locs) / len(sim_list)), '%')
         self.nn_graph = nn_graph
         return
