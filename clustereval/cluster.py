@@ -114,7 +114,8 @@ class ClusterExperiment:
         weight_list = distance_array.flatten()# distance array will be 0 at loops
         csr_array = csr_matrix((weight_list, (row_list, col_list)),
                                shape=(n_cells, n_cells))
-        self.neighbor_array = neighbor_array
+        self.nn_neighbor_array = neighbor_array
+        self.nn_distance_array = distance_array
         sources, targets = csr_array.nonzero()
 
         edgelist = list(zip(sources, targets))
@@ -125,6 +126,7 @@ class ClusterExperiment:
         sim_list_array = np.asarray(sim_list)
 
         if global_pruning:
+            # remove edges below an edge weight threshold. Edges betwen poorly connected nodes wil have low edge weight 
             self.m.message('Running Global Edge Pruning', 'DEBUG')
             n_elements = self.data.shape[0]
             if jac_std_global == 'median':
@@ -254,8 +256,48 @@ class ClusterExperiment:
                     small_pop_exist = True
                     small_pop_list.append(list(np.where(labels == cluster)[0]))
                     small_cluster_list.append(cluster)
-            labels = reassign_small_cluster_cells(labels, small_pop_list, small_cluster_list, self.neighbor_array)
+            labels = reassign_small_cluster_cells(labels, small_pop_list, small_cluster_list, self.nn_neighbor_array)
         return labels 
+    def run_UMAP(self, n_components=2, alpha: float = 1.0, negative_sample_rate: int = 5,
+                     gamma: float = 1.0, spread=1.0, min_dist=0.1, init_pos='spectral', random_state=1,):
+        ## pre-process data for umap
+        n_neighbors = self.nn_neighbor_array.shape[1]
+        n_cells = self.nn_neighbor_array.shape[0]
+        row_list = np.transpose(
+            np.ones((n_neighbors, n_cells)) * range(0, n_cells)).flatten()
+        row_min = np.min(self.nn_distance_array, axis=1)
+        row_sigma = np.std(self.nn_distance_array, axis=1)
+
+        distance_array = (
+            self.nn_distance_array - row_min[:, np.newaxis])/row_sigma[:, np.newaxis]
+        col_list = self.nn_neighbor_array.flatten().tolist()
+        distance_array = distance_array.flatten()
+        distance_array = np.sqrt(distance_array)
+        distance_array = distance_array * -1
+
+        weight_list = np.exp(distance_array)
+
+        threshold = np.mean(weight_list) + 2 * np.std(weight_list)
+
+        weight_list[weight_list >= threshold] = threshold
+
+        weight_list = weight_list.tolist()
+
+        graph = csr_matrix((np.array(weight_list), (np.array(row_list), np.array(col_list))),
+                           shape=(n_cells, n_cells))
+
+        graph_transpose = graph.T
+        prod_matrix = graph.multiply(graph_transpose)
+
+        graph = graph_transpose + graph - prod_matrix
+        from umap.umap_ import find_ab_params, simplicial_set_embedding
+        import matplotlib.pyplot as plt
+
+        a, b = find_ab_params(spread, min_dist)
+        X_umap = simplicial_set_embedding(data=self.data, graph=graph, n_components=n_components, initial_alpha=alpha, a=a, b=b, n_epochs=0, metric_kwds={
+        }, gamma=gamma, negative_sample_rate=negative_sample_rate, init=init_pos,  random_state=np.random.RandomState(random_state), metric='euclidean', verbose=False, densmap=False, densmap_kwds={}, output_dens=False)
+        return X_umap
+        #return 
 
 def run_clustering(reduction,alg,  res, k, perturb = False,edge_permut_frac=None, weight_permut_range=None, local_pruning=False, global_pruning=False, min_cluster_size=10, verbosity=1):
     """Run clustering based on input parameters from start to finish
