@@ -39,7 +39,7 @@ merge_clu <- ggplot(merge_df) +
 split_df <- df 
 split_df$x[251:300] <- rnorm(50, 5)
 split_df$y[251:300] <- rnorm(50, -5)
-split_df$clustering_2A <-  c(rep('1', 100),rep('2', 100), rep('3', 50), rep('4', 50) )
+split_df$clustering_2A <- c(rep('1', 100),rep('2', 100), rep('3', 50), rep('4', 50) )
 split_clu <- ggplot(split_df) + 
     geom_point(aes(x=x, y=y, color=clustering_1), size = 3) + 
     xlab('')+
@@ -66,7 +66,7 @@ prom_clu <- ggplot(prom_df) +
 
 (main_clu + merge_clu) / ( split_clu | prom_clu) +plot_layout(guides='collect', ) & theme_bw() & 
     #geom_vline(xintercept = 0)& geom_hline(yintercept = 0) & 
-    xlim(c(-10, 10)) & ylim(c(-10,10)) 
+    xlim(c(-10, 10)) & ylim(c(-10,10))  & guides(color = guide_legend(title = 'Original Cluster'))
 
 
 ```
@@ -77,18 +77,20 @@ n=100
 r=16
 example_df <- bind_rows(
     tibble(x= rnorm(n, 0), y=rnorm(n, r), clustering_1 = 'A'),
-    tibble(x= rnorm(n, r/2), y=rnorm(n, r/2), clustering_1 = 'A'),
-    tibble(x= rnorm(n, r), y=rnorm(n, 0), clustering_1 = 'A'),
-    tibble(x= rnorm(n, r/2), y=rnorm(n, -r/2), clustering_1 = 'A'),
-    tibble(x= rnorm(n, 0), y=rnorm(n, -r), clustering_1 = 'A'),
-    tibble(x= rnorm(n, -r/2), y=rnorm(n, -r/2), clustering_1 = 'A'),
-    tibble(x= rnorm(n, -r), y=rnorm(n, 0), clustering_1 = 'A'),
-    tibble(x= rnorm(n, -r/2), y=rnorm(n, r/2), clustering_1 = 'A'),
+    tibble(x= rnorm(n, r/2), y=rnorm(n, r/2), clustering_1 = 'B'),
+    tibble(x= rnorm(n, r), y=rnorm(n, 0), clustering_1 = 'C'),
+    tibble(x= rnorm(n, r/2), y=rnorm(n, -r/2), clustering_1 = 'D'),
+    tibble(x= rnorm(n, 0), y=rnorm(n, -r), clustering_1 = 'E'),
+    tibble(x= rnorm(n, -r/2), y=rnorm(n, -r/2), clustering_1 = 'F'),
+    tibble(x= rnorm(n, -r), y=rnorm(n, 0), clustering_1 = 'G'),
+    tibble(x= rnorm(n, -r/2), y=rnorm(n, r/2), clustering_1 = 'H'),
+    tibble(x= rnorm(n, 0), y=rnorm(n, 0), clustering_1 = 'I')
 )
 
 
 ggplot(example_df) + 
-    geom_point(aes(x=x, y=y))
+    geom_point(aes(x=x, y=y, color = clustering_1)) +
+    theme_minimal()
 
 ```
 
