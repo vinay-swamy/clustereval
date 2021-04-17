@@ -21,7 +21,7 @@ setup(
     setup_requires=['numpy', 'pybind11', 'setuptools-rust'],
     install_requires=['pybind11', 'numpy', 'scipy', 'pandas', 'hnswlib', 'python-igraph', 'leidenalg>=0.7.0', 'louvain'],
     rust_extensions=[RustExtension(
-        "clustereval.calc_metrics", "Cargo.toml")],
+        "clustereval._calc_metrics", "Cargo.toml")],
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",

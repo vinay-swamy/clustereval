@@ -14,10 +14,10 @@ use pyo3::wrap_pyfunction;
 
 #[derive(Debug)]
 struct ClusterResults {
-    barcodes:Vec<String>,
-    labels: Vec<String> , 
-    barcode_set:HashSet<String>,
-    grouped_barcodes: HashMap<String, HashSet<String>>,
+    barcodes:Vec<i64>,
+    labels: Vec<i64> , 
+    barcode_set:HashSet<i64>,
+    grouped_barcodes: HashMap<i64, HashSet<i64>>,
     h_tot: f64,
     exp_name:String
 }
@@ -27,7 +27,7 @@ struct ExperimentResults{
     #[pyo3(get)]
     exp_param :String,
     #[pyo3(get)]
-    cluster_ids : Vec<String>,
+    cluster_ids : Vec<i64>,
     #[pyo3(get)]
     stability_scores: Vec<f64>,
     #[pyo3(get)]
@@ -65,7 +65,7 @@ impl ExperimentResults{
     }
 }
 
-fn entropy(group_map: &HashMap<String, HashSet<String>>, labels:&Vec<String> ) -> f64{
+fn entropy(group_map: &HashMap<i64, HashSet<i64>>, labels:&Vec<i64> ) -> f64{
         let n = labels.len() as f64;
         let res: f64 = group_map.values().map(|i|{
             let p = i.len() as f64 /n;
@@ -75,12 +75,12 @@ fn entropy(group_map: &HashMap<String, HashSet<String>>, labels:&Vec<String> ) -
     }
 
 impl ClusterResults{
-    fn new(barcodes:Vec<String>, labels: Vec<String>, exp_name: String) -> ClusterResults{
-        let barcode_set: HashSet<String> = HashSet::from_iter(barcodes.clone());
-        let mut grouped_barcodes:HashMap<String, HashSet<String>> = HashMap::new();
+    fn new(barcodes:Vec<i64>, labels: Vec<i64>, exp_name: String) -> ClusterResults{
+        let barcode_set: HashSet<i64> = HashSet::from_iter(barcodes.clone());
+        let mut grouped_barcodes:HashMap<i64, HashSet<i64>> = HashMap::new();
         let mut old_label = &labels[0];
         let mut current_label = &labels[0];// declare out here so we can add the last set back in 
-        let mut current_set: HashSet<String> = HashSet::new();
+        let mut current_set: HashSet<i64> = HashSet::new();
         for i in 0..barcodes.len(){
             current_label = &labels[i];
             let current_barcode = &barcodes[i];
@@ -88,7 +88,7 @@ impl ClusterResults{
                 current_set.insert(current_barcode.clone());
             }else{// reach a new cluster 
                 grouped_barcodes.insert(old_label.clone(), current_set);
-                let ns: HashSet<String> = HashSet::new();
+                let ns: HashSet<i64> = HashSet::new();
                 current_set = ns;
                 current_set.insert(current_barcode.clone());
                 old_label = current_label;
@@ -105,13 +105,13 @@ impl ClusterResults{
     
 }
 
-fn stability_k(ref_bc: &HashSet<String>, query:&ClusterResults) -> f64{
-        let intersect: HashSet<String> = ref_bc.intersection(&query.barcode_set).cloned().collect::<HashSet<String>>();
+fn stability_k(ref_bc: &HashSet<i64>, query:&ClusterResults) -> f64{
+        let intersect: HashSet<i64> = ref_bc.intersection(&query.barcode_set).cloned().collect::<HashSet<i64>>();
         if intersect.len() == 0{
             return 0.0
         } else{
-            let mut new_bc :Vec<String> = vec![String::new(); intersect.len()];
-            let mut new_labels : Vec<String> = vec![String::new(); intersect.len()];
+            let mut new_bc :Vec<i64> = vec![-1; intersect.len()];
+            let mut new_labels : Vec<i64> = vec![-1; intersect.len()];
             let mut j=0;
             for i in 0..query.barcodes.len(){
                 if intersect.contains(&query.barcodes[i]){
@@ -137,12 +137,12 @@ fn read_cluster_results( file: &str) ->ClusterResults {
     handle.read_to_end(&mut buffer).expect("couldnt read file");
     let file_string = decode_reader(buffer).expect("bad gzip");
     let file_string: Vec<&str> = file_string.lines().collect();
-    let mut barcodes: Vec<String> = vec![String::new(); file_string.len()];
-    let mut labels: Vec<String> = vec![String::new(); file_string.len()];
+    let mut barcodes: Vec<i64> = vec![-1; file_string.len()];
+    let mut labels: Vec<i64> = vec![-1; file_string.len()];
     for i in 0..file_string.len(){
         let line_split : Vec<&str> = file_string[i].split(",").collect();
-        barcodes[i] = String::from(line_split[0]);
-        labels[i] = String::from(format!("clu{}", line_split[1]) );
+        barcodes[i] = String::from(line_split[0]).parse::<i64>().unwrap();
+        labels[i] = String::from(line_split[1]).parse::<i64>().unwrap();
     }
     let exp_name  = file.split("/").last().unwrap() ;
     ClusterResults::new(barcodes,labels, String::from(exp_name))
@@ -168,7 +168,7 @@ fn calculate_metrics(ref_cluster:&ClusterResults, query_clusters: &Vec<&ClusterR
         v.retain(|x| *x != f64::NAN); // in purity_k f64::NAN is explicitly returned, so this works. Consider changing for conistency
         return vmean(v) 
     } ).collect::<Vec<f64>>();   
-    let cluster_ids: Vec<String> = ref_cluster.grouped_barcodes.keys().cloned().collect::<Vec<String>>() ;
+    let cluster_ids: Vec<i64> = ref_cluster.grouped_barcodes.keys().cloned().collect::<Vec<i64>>() ;
     let exp_param = ref_cluster.exp_name.clone();
     return ExperimentResults{ exp_param,cluster_ids, stability_scores, purity_scores }
 }
@@ -178,21 +178,21 @@ fn vmean(v:Vec<f64>) -> f64{
 
 }
 
-fn purity_k(ref_bc_set: &HashSet<String>, query_map: &HashMap<String, HashSet<String>>) -> f64{
+fn purity_k(ref_bc_set: &HashSet<i64>, query_map: &HashMap<i64, HashSet<i64>>) -> f64{
     let mut max_overlap = 0;
-    let mut max_overlap_key = &String::from("NA");
+    let mut max_overlap_key:i64 = -100000000;
     for query_key in query_map.keys(){
         let q_cluster_set = query_map.get(query_key).unwrap();
         let overlap = ref_bc_set.intersection(q_cluster_set).count();
         if overlap > max_overlap{
             max_overlap = overlap;
-            max_overlap_key = query_key;
+            max_overlap_key = *query_key;
         }
     }
-    if max_overlap_key == &String::from("NA"){
+    if max_overlap_key == -100000000{
         return f64::NAN;
     } else{
-        return max_overlap as f64 / query_map.get(max_overlap_key).unwrap().len() as f64
+        return max_overlap as f64 / query_map.get(&max_overlap_key).unwrap().len() as f64
     }
 }
 
@@ -232,11 +232,11 @@ fn pairwise_metric_calculation_fromdisk(file_glob: &str, nthreads:usize) -> Vec<
 }
 
 #[pyfunction]
-fn pairwise_metric_calculation_frommem(mut cluster_dfs: Vec<HashMap<String, Vec<String>>>, exp_names:Vec<String>, nthreads:usize) -> Vec<ExperimentResults> {
-    let clusters_objs_owned = cluster_dfs.into_iter().enumerate().map(|(i, mut x)|ClusterResults::new(x.remove(&String::from("Barcode")).unwrap(), 
-                                                                            x.remove(&String::from("labels")).unwrap(), 
-                                                                            exp_names[i].clone() )
-                                                    ).collect::<Vec<ClusterResults>>();
+fn pairwise_metric_calculation_frommem(mut cluster_dfs: Vec<HashMap<String, Vec<i64>>>, exp_names:Vec<String>, nthreads:usize) -> Vec<ExperimentResults> {
+    let clusters_objs_owned = cluster_dfs.into_iter().enumerate().map(|(i, mut x)|{
+        ClusterResults::new(x.remove(&String::from("Barcode")).unwrap(), 
+                            x.remove(&String::from("labels")).unwrap(), 
+                            exp_names[i].clone() )}).collect::<Vec<ClusterResults>>();
                         
     
 
@@ -246,7 +246,7 @@ fn pairwise_metric_calculation_frommem(mut cluster_dfs: Vec<HashMap<String, Vec<
 }
 
 #[pyfunction]
-fn oneway_metric_calculation(mut ref_df: HashMap<String, Vec<String>>, mut query_dfs:Vec<HashMap<String, Vec<String>>>, exp_name: String, outfile:&str){
+fn metric_calculation_fromdf(mut ref_df: HashMap<String, Vec<i64>>, query_dfs:Vec<HashMap<String, Vec<i64>>>, exp_name: String)->ExperimentResults{
     let ref_cluster = ClusterResults::new(ref_df.remove(&String::from("Barcode")).unwrap(), 
                                           ref_df.remove(&String::from("labels")).unwrap(), 
                                           exp_name);
@@ -257,7 +257,7 @@ fn oneway_metric_calculation(mut ref_df: HashMap<String, Vec<String>>, mut query
     let query_clusters_refs = query_clusters_owned.iter().collect::<Vec<&ClusterResults>>();
 
     let res = calculate_metrics(&ref_cluster, &query_clusters_refs);
-    res.write_csv_simple(outfile);
+    return res
 
 }
 
@@ -270,10 +270,10 @@ fn oneway_metric_calculation(mut ref_df: HashMap<String, Vec<String>>, mut query
 // }
 
 #[pymodule]
-fn calc_metrics(py: Python, module: &PyModule) -> PyResult<()> {
+fn _calc_metrics(py: Python, module: &PyModule) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(pairwise_metric_calculation_fromdisk, module)?)?;
     module.add_function(wrap_pyfunction!(pairwise_metric_calculation_frommem, module)?)?;
-    module.add_function(wrap_pyfunction!(oneway_metric_calculation, module)?)?;
+    module.add_function(wrap_pyfunction!(metric_calculation_fromdf, module)?)?;
     module.add_class::<ExperimentResults>()?;
     Ok(())
 }

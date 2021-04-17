@@ -40,12 +40,16 @@ def test_full_cluster_leiden_weight_perturb(data):
 
 def test_dup_row_error_FAILS():
     data = pd.read_csv('clustereval/data/testdata.csv.gz', index_col=0)
-    ce.cluster.run_clustering(data, 'louvain',  1.0, 30, perturb=False,edge_permut_frac=None, 
+    try:
+        ce.cluster.run_clustering(data, 'louvain',  1.0, 30, perturb=False,edge_permut_frac=None, 
                               weight_permut_range=None, local_pruning=False,
                               global_pruning=False, min_cluster_size=10, verbosity=0)
+        assert 1==2
+    except ce.cluster.DuplicateRowError:
+        pass
 
 def test_umap(data):
     clu_obj = ce.cluster.ClusterExperiment(data ,verbosity=2)
     clu_obj.buildNeighborGraph(knn=10, nn_space='l2', ef_construction=150,
                                local_pruning=True, global_pruning=True, jac_std_global='median', dist_std_local = 3)
-    embedding = clu_obj.run_UMAP()
+    #embedding = clu_obj.run_UMAP()
