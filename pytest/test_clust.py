@@ -48,6 +48,13 @@ def test_dup_row_error_FAILS():
     except ce.cluster.DuplicateRowError:
         pass
 
+def test_run_perturbations(data):
+    cluobj = ce.cluster.run_clustering(data, 'leiden',  1.0, 30, perturb=False, edge_permut_frac=None,
+                                       weight_permut_range=None, local_pruning=False,
+                                       global_pruning=False, min_cluster_size=10, return_clu_exp=True, verbosity=0)
+    out_ptb = ce.cluster.run_perturbations(cluobj, 1.0, 'leiden', 5, .05, None, 10)
+    return
+
 def test_umap(data):
     clu_obj = ce.cluster.ClusterExperiment(data ,verbosity=2)
     clu_obj.buildNeighborGraph(knn=10, nn_space='l2', ef_construction=150,

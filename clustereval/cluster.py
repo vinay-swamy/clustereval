@@ -8,7 +8,7 @@ import time
 import os 
 import sys
 import louvain
-
+import copy
 
 def reassign_small_cluster_cells(labels, small_pop_list, small_cluster_list, neighbor_array):
     for small_cluster in small_pop_list:
@@ -299,7 +299,7 @@ class ClusterExperiment:
         return X_umap
         #return 
 
-def run_clustering(reduction,alg,  res, k, perturb = False,edge_permut_frac=None, weight_permut_range=None, local_pruning=False, global_pruning=False, min_cluster_size=10, verbosity=1):
+def run_clustering(reduction,alg,  res, k, perturb = False,edge_permut_frac=None, weight_permut_range=None, local_pruning=False, global_pruning=False, min_cluster_size=10, return_clu_exp=False, verbosity=1):
     """Run clustering based on input parameters from start to finish
 
     :param reduction: input data to cluster
@@ -349,4 +349,39 @@ def run_clustering(reduction,alg,  res, k, perturb = False,edge_permut_frac=None
         labels = clu_obj.merge_singletons(labels, min_cluster_size)
     outdf = pd.DataFrame(
         {"Barcode": list(reduction.index), 'labels': labels}).sort_values('labels')
-    return outdf
+    
+    if return_clu_exp:
+        clu_obj.cluster_results = outdf
+        return clu_obj
+    else:
+        return outdf
+
+
+def run_perturbations(clu_obj, res, alg, n_perturbations,  edge_permut_frac=None, weight_permut_range=None, min_cluster_size=10, verbosity=1):
+    out_labels = [None] * n_perturbations
+    for i in range(n_perturbations):
+        perturbed_clu = copy.deepcopy(clu_obj)
+        perturbed_clu.run_perturbation(edge_permut_frac, weight_permut_range)
+        if alg == 'louvain':
+            ptb_labels = perturbed_clu.run_louvain(
+                vertex_partition_method=louvain.RBConfigurationVertexPartition,
+                resolution=res,
+                jac_weighted_edges='weight'
+            )
+        elif alg == 'leiden':
+            ptb_labels = perturbed_clu.run_leiden(
+                vertex_partition_method=leidenalg.RBConfigurationVertexPartition,
+                n_iter=5,
+                resolution=res,
+                jac_weighted_edges='weight'
+            )
+        
+        out_labels[i] =  pd.DataFrame(
+                {"Barcode": list(clu_obj.data.index), 'labels': ptb_labels}).sort_values('labels')
+
+    return out_labels
+
+        
+
+    
+        

@@ -8,7 +8,7 @@ def clus():
     data= pd.read_csv('clustereval/data/testdata.csv.gz')
     clus = [ce.cluster.run_clustering(data, 'louvain',  1.0, i, perturb=True, edge_permut_frac=.5,
                                       weight_permut_range=(.6, 1.6), local_pruning=False,
-                                      global_pruning=False, min_cluster_size=10, verbosity=0)for i in range(30, 60, 5)]
+                                      global_pruning=False, min_cluster_size=10, verbosity=0) for i in range(30, 60, 5)]
     return clus
 
 @pytest.fixture 
@@ -29,6 +29,7 @@ def py_purity(clus):
     return ce.purity.run_purity_calc((clu_tups[0], clu_tups[1:], 'cluster_ids')).rename(columns={'purity':'py_purity'})
     
 
+## equality assertions will occasionally fail, because of some floating point errors, always run twice 
 def test_singleway_metric_calc_int_df(clus, py_stability, py_purity):
     ref_clu = clus[0]
     k=ce.metrics.calculate_metrics(
@@ -49,9 +50,11 @@ def test_singleway_metric_calc_string_df(clus, py_stability, py_purity):
     k = ce.metrics.calculate_metrics(
         ref_clu, clus, 'test').assign(cluster_ids = lambda x: x.labels.astype(int))
     comp = k.merge(py_stability).merge(py_purity)
+    print(comp)
     assert sum(comp['stability'] - comp['H_k_scores']) == 0
     assert sum(comp['purity'] - comp['py_purity']) == 0
     return
+
 
 
 # def test_singleway_metric_calc_int_l(clus, py_stability):
