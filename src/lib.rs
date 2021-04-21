@@ -87,7 +87,10 @@ impl ClusterResults{
             if  current_label == old_label{
                 current_set.insert(current_barcode.clone());
             }else{// reach a new cluster 
-                grouped_barcodes.insert(old_label.clone(), current_set);
+                let dup_check = grouped_barcodes.insert(old_label.clone(), current_set);
+                if !dup_check.is_none(){ // HashMap.insert returns None when new key is added
+                    panic!("A duplicate key was added when making a ClusterResults; input data is not sorted by label")
+                }
                 let ns: HashSet<i64> = HashSet::new();
                 current_set = ns;
                 current_set.insert(current_barcode.clone());
