@@ -376,6 +376,7 @@ def run_perturbations(clu_obj, res, alg, n_perturbations,  edge_permut_frac=None
                 jac_weighted_edges='weight'
             )
         
+        ptb_labels= perturbed_clu.merge_singletons(ptb_labels, min_cluster_size)
         out_labels[i] =  pd.DataFrame(
                 {"Barcode": list(clu_obj.data.index), 'labels': ptb_labels}).sort_values('labels')
 
