@@ -1,12 +1,12 @@
 import numpy as np
 
+RES_RANGE= [.2, .4, .6, .8, 1.0,  1.2,  1.4, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0]
 rule all:
     input:
-        #pairwise_exp = expand('par_exp_metrics/{countMat}-exp_alg-{alg}.pickle', countMat= ['sanes_amacrine','pbmc'], alg = ['louvain', 'leiden']),
-        perturbs = expand('perturb_out/{countMat}-exp_alg-{alg}_res-{res}_knn-{k}_.csv',
-                     countMat= ['sanes_amacrine','pbmc'], alg = ['louvain', 'leiden'],res = [.2,.3, .4, .5, .6, .7, .8, .9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0],
-                    k=list(range(5,100, 5))  )
-
+        clustering = expand('cluster_out/ds-{countMat}_alg-{alg}_knn-{k}_.csv.gz', k=list(range(4,101,2)),
+                                countMat = ['sanes_amacrine','pbmc'], alg = ['louvain', 'leiden']),
+        metrics = expand('cluster_metrics/ds-{countMat}_alg-{alg}_knn-{k}_.csv.gz', k=list(range(4,101,2)),
+                                countMat = ['sanes_amacrine','pbmc'], alg = ['louvain', 'leiden'])
 
 rule make_count_matrices:
     output:
@@ -14,6 +14,7 @@ rule make_count_matrices:
         'data/pbmc_preproccessed.csv.gz',
     shell:
         '''
+
         wget https://cf.10xgenomics.com/samples/cell/pbmc3k/pbmc3k_filtered_gene_bc_matrices.tar.gz
         wget https://ftp.ncbi.nlm.nih.gov/geo/series/GSE149nnn/GSE149715/suppl/GSE149715%5FMouseAC%5Fcount%5Fmatrix%2Ecsv%2Egz
         tar -xzf pbmc3k_filtered_gene_bc_matrices.tar.gz
@@ -22,6 +23,7 @@ rule make_count_matrices:
         rm pbmc3k_filtered_gene_bc_matrices.tar.gz
         rm filtered_gene_bc_matrices/ -rf
         rm GSE149715_MouseAC_count_matrix.csv.gz
+
         '''
 
 
@@ -29,59 +31,62 @@ rule run_parameter_exp_clustering:
     input: 
         mat = 'data/{countMat}_preproccessed.csv.gz'
     output:
-        expand('par_exp_out/{{countMat}}-exp_alg-{{alg}}_res-{{res}}_knn-{n}_.csv.gz', n=list(range(5,100)))
-    run:
-        import clustereval as ce
-        import numpy as np 
-        import pandas as pd
-        reduction = pd.read_csv(input.mat, index_col=0)
-        knn_uniform = list(range(5,100))
-        for k in knn_uniform:
-            clu_out = ce.cluster.run_clustering(reduction,wildcards.alg, float(wildcards.res), k, min_cluster_size = 50)
-            outstring = f'par_exp_out/{wildcards.countMat}-exp_alg-{wildcards.alg}_res-{str(wildcards.res)}_knn-{str(k)}_.csv.gz'
-            clu_out.to_csv(outstring, header=False, index = False)
+        clustering = 'cluster_out/ds-{countMat}_alg-{alg}_knn-{k}_.csv.gz',
+        metrics = 'cluster_metrics/ds-{countMat}_alg-{alg}_knn-{k}_.csv.gz'
 
-rule run_perturbation_experiments:
-    input:
-        mat = 'data/{countMat}_preproccessed.csv.gz', 
-        ref_clu = 'par_exp_out/{countMat}-exp_alg-{alg}_res-{res}_knn-{k}_.csv.gz'
-    output:
-        'perturb_out/{countMat}-exp_alg-{alg}_res-{res}_knn-{k}_.csv'
     run:
         import clustereval as ce
         import numpy as np 
         import pandas as pd
-        from joblib import Parallel, delayed        
-        ref_clust = pd.read_csv(input.ref_clu, names = ['Barcode','labels']).assign(labels =lambda x: x.labels.astype(str)).to_dict('list')
-        reduction = pd.read_csv(input.mat, index_col=0)
-        perturbed_clusters = Parallel(n_jobs=-1)(
-            delayed(ce.cluster.run_clustering)(reduction.sample(frac=.85), wildcards.alg, float(wildcards.res), int(wildcards.k), True, .05, None, False, False, 50)
-            for _ in range(100))
-        perturbed_clusters = [i.assign(labels =lambda x: x.labels.astype(str)).to_dict('list') for i in perturbed_clusters]
-        exp_stem = f'{wildcards.countMat}-exp_alg-{wildcards.alg}_res-{wildcards.res}_knn-{wildcards.k}'
-        ce.calc_metrics.oneway_metric_calculation(ref_clust, 
-                                                  perturbed_clusters, 
-                                                  exp_stem, 
-                                                  f'perturb_out/{exp_stem}_.csv')
+        import leidenalg 
+        import louvain 
 
-rule calculate_parameter_exp_metrics:
-    input: 
-        expand('par_exp_out/{{countMat}}-exp_alg-{{alg}}_res-{res}_knn-{n}_.csv.gz', 
-                res = [.2, .3, .4, .5, .6, .7, .8, .9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5], n=list(range(5,100)))
-    output:
-        results = 'par_exp_metrics/{countMat}-exp_alg-{alg}.pickle'
-    params:
-        glob_string= lambda wildcards: f'par_exp_out/{wildcards.countMat}-exp_alg-{wildcards.alg}*_.csv.gz'
-    run:
-        import clustereval as ce
-        import numpy as np 
-        import pandas as pd
-        import pickle
-        exp_results = ce.calc_metrics.pairwise_metric_calculation_fromdisk(params.glob_string, 96)
-        with open(output.results, 'wb+') as outfile:
-            exp_results = [{'exp_param': i.exp_param, 
-                            'cluster_ids':i.cluster_ids, 
-                            'stability_scores': i.stability_scores, 
-                            'purity_scores': i.purity_scores} for i in exp_results  ]
-            pickle.dump(exp_results, outfile)
+        reduction = pd.read_csv(input.mat, index_col=0)
+        clu_obj = ce.cluster.ClusterExperiment(reduction, 0)
+        clu_obj.buildNeighborGraph(int(wildcards.k), 'l2', 150, False, False, None, None)
+        if wildcards.alg == 'louvain':
+            labels = clu_obj.run_louvain(
+                vertex_partition_method=louvain.RBConfigurationVertexPartition,
+                resolution=1.0,
+                jac_weighted_edges='weight'
+            )
+        elif wildcards.alg == 'leiden':
+            labels = clu_obj.run_leiden(
+                vertex_partition_method=leidenalg.RBConfigurationVertexPartition,
+                resolution = 1.0,
+                n_iter=5,
+                jac_weighted_edges='weight'
+            )
+        
+        labels_clean = clu_obj.merge_singletons(labels, 50)
+        ref_labels = pd.DataFrame().assign(Barcode = list(reduction.index), labels = labels_clean).sort_values('labels')
+        ref_labels.to_csv(output.clustering)
+
+        perturbed_labels = ce.cluster.run_perturbations(clu_obj, 1 , wildcards.alg, 50, .05, None, 50, 0)
+        
+        metrics = ce.metrics.calculate_metrics(ref_labels, perturbed_labels)
+        metrics.to_csv(output.metrics)
+
+
+
+# rule calculate_parameter_exp_metrics:
+#     input: 
+#         expand('par_exp_out/{{countMat}}-exp_alg-{{alg}}_res-{res}_knn-{n}_.csv.gz', 
+#                 res = [.2,.3, .4, .5, .6, .7, .8, .9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0], n=list(range(5,100,5)))
+#     output:
+#         results = 'par_exp_metrics/{countMat}-exp_alg-{alg}.pickle'
+#     params:
+#         glob_string= lambda wildcards: f'par_exp_out/{wildcards.countMat}-exp_alg-{wildcards.alg}*_.csv.gz'
+#     run:
+#         import clustereval as ce
+#         import numpy as np 
+#         import pandas as pd
+#         import pickle
+#         exp_results = ce.calc_metrics.pairwise_metric_calculation_fromdisk(params.glob_string, 96)
+#         with open(output.results, 'wb+') as outfile:
+#             exp_results = [{'exp_param': i.exp_param, 
+#                             'cluster_ids':i.cluster_ids, 
+#                             'stability_scores': i.stability_scores, 
+#                             'purity_scores': i.purity_scores} for i in exp_results  ]
+#             pickle.dump(exp_results, outfile)
         
