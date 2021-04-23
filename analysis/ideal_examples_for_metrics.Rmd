@@ -17,8 +17,12 @@ df <- bind_rows(
 
 )
 
+lab_df = tibble(x =c(-5,5, -5, 5), y=c(5, 5, -5, -5), lab = c('1', '2', '3', '4'))
+
+
 main_clu <- ggplot(df) + 
     geom_point(aes(x=x, y=y, color=clustering_1), size = 3) + 
+    geom_text(data =lab_df[1:3,], aes(x=x, y=y, label = lab), size = 5)+
     xlab('')+
     ylab('')+
     ggtitle('reference')+
@@ -28,8 +32,9 @@ merge_df <- df
 merge_df[merge_df$clustering_1 == 'C',]$x <- rnorm(n, 5)
 merge_df[merge_df$clustering_1 == 'C',]$y <- rnorm(n, 5)
 
-merge_clu <- ggplot(merge_df) + 
-    geom_point(aes(x=x, y=y, color=clustering_1), size = 3) + 
+merge_clu <- ggplot() + 
+    geom_point( data = merge_df, aes(x=x, y=y, color=clustering_1), size = 3) + 
+    geom_text(data =lab_df[1:2,], aes(x=x, y=y, label = lab), size = 5)+
     xlab('')+
     ylab('')+
     ggtitle('Stable, but not Pure')+
@@ -42,6 +47,7 @@ split_df$y[251:300] <- rnorm(50, -5)
 split_df$clustering_2A <- c(rep('1', 100),rep('2', 100), rep('3', 50), rep('4', 50) )
 split_clu <- ggplot(split_df) + 
     geom_point(aes(x=x, y=y, color=clustering_1), size = 3) + 
+    geom_text(data =lab_df, aes(x=x, y=y, label = lab), size = 5)+
     xlab('')+
     ylab('')+
     ggtitle('Pure, but not Stable')+
@@ -56,6 +62,7 @@ prom_df <- bind_rows(prom_df,
                     )
 prom_clu <- ggplot(prom_df) + 
     geom_point(aes(x=x, y=y, color=clustering_1), size = 3) + 
+    geom_text(data =lab_df, aes(x=x, y=y, label = lab), size = 5)+
     xlab('')+
     ylab('')+
     ggtitle('Not pure not Stable')+
