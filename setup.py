@@ -9,7 +9,7 @@ setup(
     version="0.0.2",
     author="Vinay Swamy",
     author_email="swamyvinny@gmail.com",
-    description="A small example package",
+    description="Evaluating accuracy of graph based clustering",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/vinay-swamy/clustereval",
@@ -19,7 +19,7 @@ setup(
     python_requires=">=3.6",
     packages=['clustereval'],
     setup_requires=['numpy', 'pybind11', 'setuptools-rust'],
-    install_requires=['pybind11', 'numpy', 'scipy', 'pandas', 'hnswlib', 'python-igraph', 'leidenalg>=0.7.0', 'louvain'],
+    install_requires=['pybind11', 'numpy', 'scipy', 'pandas', 'hnswlib', 'python-igraph', 'leidenalg>=0.7.0', 'louvain','umap-learn'],
     rust_extensions=[RustExtension(
         "clustereval._calc_metrics", "Cargo.toml")],
     classifiers=[
