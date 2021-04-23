@@ -6,10 +6,21 @@ import clustereval as ce
 @pytest.fixture
 def clus():
     data= pd.read_csv('clustereval/data/testdata.csv.gz')
-    clus = [ce.cluster.run_clustering(data, 'louvain',  1.0, i, perturb=True, edge_permut_frac=.5,
-                                      weight_permut_range=(.6, 1.6), local_pruning=False,
-                                      global_pruning=False, min_cluster_size=10, verbosity=0) for i in range(30, 60, 5)]
-    return clus
+    metrics, ref_labels, perturbations = ce.cluster.run_full_experiment(reduction=data,
+                                          alg='louvain',
+                                          k=30,
+                                          local_pruning=False,
+                                          global_pruning=False,
+                                          quality_function='RBConfigurationVertexPartition',
+                                          cluster_kwargs={},
+                                          n_perturbations=5,
+                                          edge_permut_frac=.05,
+                                          weight_permut_range=None,
+                                          min_cluster_size=10,
+                                          experiment_name='clusterEval',
+                                          verbosity=0
+                                          )
+    return perturbations
 
 @pytest.fixture 
 def clus_dicts(clus):

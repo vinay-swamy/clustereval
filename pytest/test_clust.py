@@ -8,55 +8,192 @@ def data():
     return pd.read_csv('clustereval/data/testdata.csv.gz')
 
 def test_vanilla_cluster_louvain(data):
-    ce.cluster.run_clustering(data, 'louvain',  1.0, 30, perturb=False,edge_permut_frac=None, 
-                              weight_permut_range=None, local_pruning=False,
-                              global_pruning=False, min_cluster_size=10, verbosity=0)
+    ce.cluster.run_full_experiment(reduction = data, 
+                                   alg = 'louvain', 
+                                   k=30, 
+                                   local_pruning=False,
+                                   global_pruning=False,  
+                                   quality_function='RBConfigurationVertexPartition',
+                                   cluster_kwargs={},
+                                   n_perturbations=0, 
+                                   edge_permut_frac=None, 
+                                   weight_permut_range=None, 
+                                   min_cluster_size=10, 
+                                   experiment_name='clusterEval', 
+                                   verbosity=0
+                                   )
+
+
+def test_louvain_prune(data):
+    ce.cluster.run_full_experiment(reduction=data,
+                                   alg='louvain',
+                                   k=30,
+                                   local_pruning=True,
+                                   global_pruning=True,
+                                   quality_function='ModularityVertexPartition',
+                                   cluster_kwargs={},
+                                   n_perturbations=0,
+                                   edge_permut_frac=None,
+                                   weight_permut_range=None,
+                                   min_cluster_size=10,
+                                   experiment_name='clusterEval',
+                                   verbosity=0
+                                   )
+
+
+def test_louvain_alt_quality_function(data):
+    ce.cluster.run_full_experiment(reduction=data,
+                                   alg='leiden',
+                                   k=30,
+                                   local_pruning=False,
+                                   global_pruning=False,
+                                   quality_function='RBConfigurationVertexPartition',
+                                   cluster_kwargs={},
+                                   n_perturbations=0,
+                                   edge_permut_frac=None,
+                                   weight_permut_range=None,
+                                   min_cluster_size=10,
+                                   experiment_name='clusterEval',
+                                   verbosity=0
+                                   )
 
 
 def test_vanilla_cluster_leiden(data):
-    ce.cluster.run_clustering(data, 'leiden',  1.0, 30, perturb=False, edge_permut_frac=None, 
-                              weight_permut_range=None, local_pruning=False,
-                              global_pruning=False, min_cluster_size=10, verbosity=0)
+    ce.cluster.run_full_experiment(reduction=data,
+                                   alg='leiden',
+                                   k=30,
+                                   local_pruning=False,
+                                   global_pruning=False,
+                                   quality_function='RBConfigurationVertexPartition',
+                                   cluster_kwargs={'resolution_parameter': 1.0, 'n_iterations':5},
+                                   n_perturbations=0,
+                                   edge_permut_frac=None,
+                                   weight_permut_range=None,
+                                   min_cluster_size=10,
+                                   experiment_name='clusterEval',
+                                   verbosity=0
+                                   )
 
 
-def test_full_cluster_louvain_edge_perturb(data):
-    ce.cluster.run_clustering(data, 'louvain',  1.0, 30, perturb=True, edge_permut_frac=.05, 
-                              weight_permut_range=None, local_pruning=True,
-                              global_pruning=True, min_cluster_size=10, verbosity=0)
-def test_full_cluster_louvain_weight_perturb(data):
-    ce.cluster.run_clustering(data, 'louvain',  1.0, 30, perturb=True,edge_permut_frac=None, 
-                              weight_permut_range=(.4, 1.4), local_pruning=True,
-                              global_pruning=True, min_cluster_size=10, verbosity=0)
+def test_leiden_prune(data):
+    ce.cluster.run_full_experiment(reduction=data,
+                                   alg='leiden',
+                                   k=30,
+                                   local_pruning=True,
+                                   global_pruning=True,
+                                   quality_function='RBConfigurationVertexPartition',
+                                   cluster_kwargs={
+                                       'resolution_parameter': 1.0, 'n_iterations': 5},
+                                   n_perturbations=0,
+                                   edge_permut_frac=None,
+                                   weight_permut_range=None,
+                                   min_cluster_size=10,
+                                   experiment_name='clusterEval',
+                                   verbosity=0
+                                   )
 
 
-def test_full_cluster_leiden_edge_perturb(data):
-    ce.cluster.run_clustering(data, 'leiden',  1.0, 30, perturb=True,edge_permut_frac=.05, 
-                              weight_permut_range=None, local_pruning=True,
-                              global_pruning=True, min_cluster_size=10, verbosity=0)
-def test_full_cluster_leiden_weight_perturb(data):
-    ce.cluster.run_clustering(data, 'leiden',  1.0, 30, perturb=True, edge_permut_frac=None,
-                              weight_permut_range=(.4, 1.4), local_pruning=True,
-                              global_pruning=True, min_cluster_size=10, verbosity=0)
+def test_leiden_alt_quality_function(data):
+    ce.cluster.run_full_experiment(reduction=data,
+                                   alg='leiden',
+                                   k=30,
+                                   local_pruning=False,
+                                   global_pruning=False,
+                                   quality_function='ModularityVertexPartition',
+                                   cluster_kwargs={'n_iterations': 5},
+                                   n_perturbations=0,
+                                   edge_permut_frac=None,
+                                   weight_permut_range=None,
+                                   min_cluster_size=10,
+                                   experiment_name='clusterEval',
+                                   verbosity=0
+                                   )
 
-def test_dup_row_error_FAILS():
+
+
+def test_edge_perturb(data):
+    ce.cluster.run_full_experiment(reduction=data,
+                                   alg='louvain',
+                                   k=30,
+                                   local_pruning=False,
+                                   global_pruning=False,
+                                   quality_function='RBConfigurationVertexPartition',
+                                   cluster_kwargs={},
+                                   n_perturbations=1,
+                                   edge_permut_frac=.05,
+                                   weight_permut_range=None,
+                                   min_cluster_size=10,
+                                   experiment_name='clusterEval',
+                                   verbosity=0
+                                   )
+
+def test_weight_perturb(data):
+    ce.cluster.run_full_experiment(reduction=data,
+                                   alg='leiden',
+                                   k=30,
+                                   local_pruning=False,
+                                   global_pruning=False,
+                                   quality_function='RBConfigurationVertexPartition',
+                                   cluster_kwargs={
+                                       'resolution_parameter': 1.0, 'n_iterations': 5},
+                                   n_perturbations=2,
+                                   edge_permut_frac=None,
+                                   weight_permut_range=(.5,1.5),
+                                   min_cluster_size=10,
+                                   experiment_name='clusterEval',
+                                   verbosity=0
+                                   )
+    
+
+
+def test_dup_row_error_fails():
     data = pd.read_csv('clustereval/data/testdata.csv.gz', index_col=0)
     try:
-        ce.cluster.run_clustering(data, 'louvain',  1.0, 30, perturb=False,edge_permut_frac=None, 
-                              weight_permut_range=None, local_pruning=False,
-                              global_pruning=False, min_cluster_size=10, verbosity=0)
+        ce.cluster.run_full_experiment(reduction=data,
+                                       alg='leiden',
+                                       k=30,
+                                       local_pruning=False,
+                                       global_pruning=False,
+                                       quality_function='RBConfigurationVertexPartition',
+                                       cluster_kwargs={
+                                           'resolution_parameter': 1.0, 'n_iterations': 5},
+                                       n_perturbations=2,
+                                       edge_permut_frac=None,
+                                       weight_permut_range=(.5, 1.5),
+                                       min_cluster_size=10,
+                                       experiment_name='clusterEval',
+                                       verbosity=0
+                                       )
         assert 1==2
     except ce.cluster.DuplicateRowError:
         pass
 
-def test_run_perturbations(data):
-    cluobj = ce.cluster.run_clustering(data, 'leiden',  1.0, 30, perturb=False, edge_permut_frac=None,
-                                       weight_permut_range=None, local_pruning=False,
-                                       global_pruning=False, min_cluster_size=10, return_clu_exp=True, verbosity=0)
-    out_ptb = ce.cluster.run_perturbations(cluobj, 1.0, 'leiden', 5, .05, None, 10)
-    return
+# def test_umap(data):
+#     clu_obj = ce.cluster.ClusterExperiment(data ,verbosity=2)
+#     clu_obj.buildNeighborGraph(knn=10, nn_space='l2',
+#                                local_pruning=True, global_pruning=True, jac_std_global='median', dist_std_local = 3)
+#     embedding = clu_obj.run_UMAP()
 
-def test_umap(data):
-    clu_obj = ce.cluster.ClusterExperiment(data ,verbosity=2)
-    clu_obj.buildNeighborGraph(knn=10, nn_space='l2', ef_construction=150,
-                               local_pruning=True, global_pruning=True, jac_std_global='median', dist_std_local = 3)
-    #embedding = clu_obj.run_UMAP()
+
+def test_unsorted_metric_input_fails(data):
+    metrics, labels, pertubations =  ce.cluster.run_full_experiment(reduction=data,
+                                   alg='leiden',
+                                   k=30,
+                                   local_pruning=False,
+                                   global_pruning=False,
+                                   quality_function='RBConfigurationVertexPartition',
+                                   cluster_kwargs={
+                                       'resolution_parameter': 1.0, 'n_iterations': 5},
+                                   n_perturbations=2,
+                                   edge_permut_frac=None,
+                                   weight_permut_range=(.5, 1.5),
+                                   min_cluster_size=10,
+                                   experiment_name='clusterEval',
+                                   verbosity=0
+                                   )
+    labels = labels.sample(labels.shape[0])
+    try:
+        ce.metrics.calculate_metrics(labels, pertubations)
+    except:
+        pass
+    return

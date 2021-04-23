@@ -3,12 +3,12 @@ import pandas as pd
 import hnswlib
 from scipy.sparse import csr_matrix
 import igraph as ig
-import leidenalg
 import time
 import os 
 import sys
-import louvain
 import copy
+import importlib
+from .metrics import calculate_metrics
 
 def reassign_small_cluster_cells(labels, small_pop_list, small_cluster_list, neighbor_array):
     for small_cluster in small_pop_list:
@@ -63,8 +63,7 @@ class ClusterExperiment:
         self.m=SimpleMessager('ClusterExperiment', verbosity)
 
     
-
-    def buildNeighborGraph(self, knn, nn_space, ef_construction, local_pruning, global_pruning, jac_std_global, dist_std_local, nthreads=1):
+    def buildNeighborGraph(self, knn, nn_space, local_pruning, global_pruning, jac_std_global, dist_std_local, ef_construction=150, nthreads=1):
         """Build an approximate nearest neighbor graph from input data. Implements local and global edge pruning methods from PARC.
 
         :param nn_space: distance metric to use for graph creation. one of ['l2', 'ip', 'cosine']
@@ -146,8 +145,58 @@ class ClusterExperiment:
         self.nn_graph = nn_graph
         return
 
+    def runClustering(self, alg, quality_function, cluster_kwargs={}, min_cluster_size=10):
 
-    def run_perturbation(self, edge_permut_frac=None, weight_permut_range=None):
+        self.m.message(
+            f'Running {alg} clustering using {quality_function} quality function', 'DEBUG')
+
+        if alg == 'louvain':
+            cm = importlib.import_module('louvain')
+        elif alg == 'leiden':
+            cm = importlib.import_module('leidenalg')
+        else:
+            print('Bad Alg')
+            raise NotImplementedError
+
+        Q = getattr(cm, quality_function)
+        self.nn_graph.simplify(combine_edges='sum')
+        n_elements = self.data.shape[0]
+        partition = cm.find_partition(
+            graph = self.nn_graph,
+            partition_type=Q,
+            weights='weight',
+            **cluster_kwargs
+        )
+        labels = np.asarray(partition.membership)
+        if min_cluster_size > 1:
+            labels = self.mergeSingletons(labels, min_cluster_size)
+
+        return pd.DataFrame().assign(Barcode=list(self.data.index), labels=labels).sort_values('labels')
+     
+    def mergeSingletons(self, labels, small_pop ):
+        self.m.message('Merging small clustering', 'DEBUG')
+        n_elements = self.data.shape[0]
+        
+        labels = np.reshape(labels, ( n_elements, 1))
+        dummy, labels = np.unique(
+            list(labels.flatten()), return_inverse=True)
+        small_pop_exist = True
+        time_smallpop_start = time.time()
+        while (small_pop_exist == True) & ((time.time() - time_smallpop_start) < self.time_smallpop):
+            small_pop_list = []
+            small_cluster_list = []
+            small_pop_exist = False
+            
+            for cluster in set(list(labels.flatten())):
+                population = len(np.where(labels == cluster)[0])
+                if population < small_pop:
+                    small_pop_exist = True
+                    small_pop_list.append(list(np.where(labels == cluster)[0]))
+                    small_cluster_list.append(cluster)
+            labels = reassign_small_cluster_cells(labels, small_pop_list, small_cluster_list, self.nn_neighbor_array)
+        return labels 
+
+    def doPerturbation(self, edge_permut_frac=None, weight_permut_range=None):
         """Run Perturbation experiments descibed in ... Chosen fraction of edges are removed, then same number of edges are randomly added between vertices. Each edge is then multiplied by a noise factor sampled from a uniform distribution of choseen range
 
         :param edge_permut_frac: fraction of edges to randomly remove and add
@@ -190,75 +239,8 @@ class ClusterExperiment:
             graph.es['weight'] = new_weights
         self.nn_graph = graph
         return
-
-
-    def run_leiden(self, vertex_partition_method, n_iter, resolution, jac_weighted_edges=None, seed=None):
-        """Run leiden clustering data on built nn graph
-
-        :param vertex_partition_method: Quality function to optimize to find partitions. See leiden docs for more info 
-        :type vertex_partition_method: leidenalg.VertexPartition.MutableVertexPartition
-        :param n_iter: Number of iterations to run the Leiden algorithm. If the number of iterations is negative, the Leiden algorithm is run until an iteration in which there was no improvement.
-        :type n_iter: int
-        :param resolution: Cluster resolution that roughly correlates with number of clusters
-        :type resolution: float
-        :param jac_weighted_edges: list of weights or name of edge attribute within NN graph , defaults to None
-        :type jac_weighted_edges: [type], optional
-        :return: a 1D numpy array with lenght equal to nrows of input matrix 
-        :rtype: numpy.ndarray
-        """        
-        self.m.message('Running Leiden clustering', 'DEBUG')
-        self.nn_graph.simplify(combine_edges='sum')
-        n_elements = self.data.shape[0]
-        partition = leidenalg.find_partition(self.nn_graph, vertex_partition_method,
-                                             weights=jac_weighted_edges, n_iterations=n_iter, 
-                                             resolution_parameter = resolution, seed=seed)
-        labels = np.asarray(partition.membership)
-        return labels
-    def run_louvain(self, vertex_partition_method, resolution,  jac_weighted_edges=None, seed=None):
-        """Run louvain clustering data on built nn graph
-
-        :param vertex_partition_method: Quality function to optimize to find partitions. See leiden docs for more info 
-        :type vertex_partition_method: louvainalg.VertexPartition.MutableVertexPartition
-        :param resolution: Cluster resolution that roughly correlates with number of clusters
-        :type resolution: float
-        :param jac_weighted_edges: list of weights or name of edge attribute within NN graph , defaults to None
-        :type jac_weighted_edges: [type], optional
-        :return: a 1D numpy array with lenght equal to nrows of input matrix 
-        :rtype: numpy.ndarray
-        """
-        self.m.message('Running Louvain clustering', 'DEBUG')
-        self.nn_graph.simplify(combine_edges='sum')
-        n_elements = self.data.shape[0]
-        partition = louvain.find_partition(self.nn_graph, vertex_partition_method,
-                                             weights=jac_weighted_edges, 
-                                             resolution_parameter = resolution, seed=seed)
-        labels = np.asarray(partition.membership)
-        
-        return labels
-
-    def merge_singletons(self, labels, small_pop ):
-        self.m.message('Merging small clustering', 'DEBUG')
-        n_elements = self.data.shape[0]
-        
-        labels = np.reshape(labels, ( n_elements, 1))
-        dummy, labels = np.unique(
-            list(labels.flatten()), return_inverse=True)
-        small_pop_exist = True
-        time_smallpop_start = time.time()
-        while (small_pop_exist == True) & ((time.time() - time_smallpop_start) < self.time_smallpop):
-            small_pop_list = []
-            small_cluster_list = []
-            small_pop_exist = False
-            
-            for cluster in set(list(labels.flatten())):
-                population = len(np.where(labels == cluster)[0])
-                if population < small_pop:
-                    small_pop_exist = True
-                    small_pop_list.append(list(np.where(labels == cluster)[0]))
-                    small_cluster_list.append(cluster)
-            labels = reassign_small_cluster_cells(labels, small_pop_list, small_cluster_list, self.nn_neighbor_array)
-        return labels 
-    def run_UMAP(self, n_components=2, alpha: float = 1.0, negative_sample_rate: int = 5,
+   
+    def runUMAP(self, n_components=2, alpha: float = 1.0, negative_sample_rate: int = 5,
                      gamma: float = 1.0, spread=1.0, min_dist=0.1, init_pos='spectral', random_state=1,):
         ## pre-process data for umap
         n_neighbors = self.nn_neighbor_array.shape[1]
@@ -299,88 +281,51 @@ class ClusterExperiment:
         return X_umap
         #return 
 
-def run_clustering(reduction,alg,  res, k, perturb = False,edge_permut_frac=None, weight_permut_range=None, local_pruning=False, global_pruning=False, min_cluster_size=10, return_clu_exp=False, verbosity=1):
-    """Run clustering based on input parameters from start to finish
+    def runPerturbations(self, alg, quality_function, n_perturbations,cluster_kwargs={},  edge_permut_frac=None, weight_permut_range=None, min_cluster_size=10, verbosity=1):
+        out_labels = [None] * n_perturbations
+        for i in range(n_perturbations):
+            perturbed_clu = copy.deepcopy(self)
+            perturbed_clu.doPerturbation(edge_permut_frac, weight_permut_range)
+            ptb_labels = perturbed_clu.runClustering(alg,quality_function, cluster_kwargs,min_cluster_size)
+            out_labels[i] = ptb_labels
 
-    :param reduction: input data to cluster
-    :type reduction: numeric pandas DataFram
-    :param alg: clustering algorithmn,either ['louvain', 'leiden']
-    :type alg: str
-    :param res: cluster resolution (>0)
-    :type res: float
-    :param k: number of nearest neighbors to use for NN graph construction
-    :type k: int
-    :param perturb: run a perturbation experiment, defaults to False
-    :type perturb: bool, optional
-    :param local_pruning: run local pruning, defaults to False
-    :type local_pruning: bool, optional
-    :param global_pruning: run global pruning, defaults to False
-    :type global_pruning: bool, optional
-    :param min_cluster_size: clusters below this size are merged into closest cluster, defaults to 10
-    :type min_cluster_size: int, optional
-    :return: pandas DataFrame containing sample ids and cluster labels 
-    :rtype: pandas.DataFrame
-    """      
+        return out_labels
     
-    clu_obj = ClusterExperiment(data=reduction, verbosity=verbosity)
-    clu_obj.buildNeighborGraph(knn=k, nn_space='l2', ef_construction=150,
-                               local_pruning=local_pruning, global_pruning=global_pruning, jac_std_global='median', dist_std_local = 3)
-    if perturb:
-        clu_obj.run_perturbation(edge_permut_frac, weight_permut_range)
     
-    if alg == 'louvain':
-        labels = clu_obj.run_louvain(
-            vertex_partition_method=louvain.RBConfigurationVertexPartition,
-            resolution=res,
-            jac_weighted_edges='weight'
-        )
-    elif alg == 'leiden':
-        labels = clu_obj.run_leiden(
-            vertex_partition_method=leidenalg.RBConfigurationVertexPartition,
-            n_iter=5,
-            resolution=res,
-            jac_weighted_edges='weight'
-        )
+
+def run_full_experiment(reduction, alg='louvain', k=30, local_pruning=False, global_pruning=False, quality_function='RBConfigurationVertexPartition', cluster_kwargs={}, n_perturbations=0, edge_permut_frac=None, weight_permut_range=None,  min_cluster_size=10, experiment_name = 'clusterEval', verbosity=1):
+    
+    
+    clu_obj = ClusterExperiment(data=reduction, 
+                                verbosity=verbosity)
+    clu_obj.buildNeighborGraph(knn=k, 
+                               nn_space='l2', 
+                               local_pruning=local_pruning, 
+                               global_pruning=global_pruning, 
+                               jac_std_global='median', 
+                               dist_std_local = 3)
+
+    labels = clu_obj.runClustering(alg=alg, 
+                                   quality_function=quality_function, 
+                                   cluster_kwargs =  cluster_kwargs,
+                                   min_cluster_size = min_cluster_size,)
+
+    if n_perturbations  > 0:
+        perturbations = clu_obj.runPerturbations(alg = alg,
+                                                 quality_function='RBConfigurationVertexPartition',
+                                                 n_perturbations =n_perturbations, 
+                                                 edge_permut_frac=edge_permut_frac, 
+                                                 weight_permut_range=weight_permut_range, 
+                                                 min_cluster_size=min_cluster_size, 
+                                                 verbosity=verbosity)
+        metrics = calculate_metrics(labels, perturbations,experiment_name)
+        return (metrics,labels, perturbations )
     else:
-        print('BAD ALG')
-        raise NotImplementedError
+        return labels 
+
+
     
-    if min_cluster_size > 1:
-        labels = clu_obj.merge_singletons(labels, min_cluster_size)
-    outdf = pd.DataFrame(
-        {"Barcode": list(reduction.index), 'labels': labels}).sort_values('labels')
-    
-    if return_clu_exp:
-        clu_obj.cluster_results = outdf
-        return clu_obj
-    else:
-        return outdf
 
-
-def run_perturbations(clu_obj, res, alg, n_perturbations,  edge_permut_frac=None, weight_permut_range=None, min_cluster_size=10, verbosity=1):
-    out_labels = [None] * n_perturbations
-    for i in range(n_perturbations):
-        perturbed_clu = copy.deepcopy(clu_obj)
-        perturbed_clu.run_perturbation(edge_permut_frac, weight_permut_range)
-        if alg == 'louvain':
-            ptb_labels = perturbed_clu.run_louvain(
-                vertex_partition_method=louvain.RBConfigurationVertexPartition,
-                resolution=res,
-                jac_weighted_edges='weight'
-            )
-        elif alg == 'leiden':
-            ptb_labels = perturbed_clu.run_leiden(
-                vertex_partition_method=leidenalg.RBConfigurationVertexPartition,
-                n_iter=5,
-                resolution=res,
-                jac_weighted_edges='weight'
-            )
-        
-        ptb_labels= perturbed_clu.merge_singletons(ptb_labels, min_cluster_size)
-        out_labels[i] =  pd.DataFrame(
-                {"Barcode": list(clu_obj.data.index), 'labels': ptb_labels}).sort_values('labels')
-
-    return out_labels
 
         
 
