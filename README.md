@@ -33,7 +33,17 @@ metrics
 |             2 |    1        | 0.972109 | example    |
 |             1 |    1        | 0.944761 | example    |
 
+## Installation 
 
+A portion of this package is written in Rust and requires the Rust toolchain to build. Instructions to install it are [here](https://www.rust-lang.org/tools/install)
+
+Once you have that, clone and install the project with pip 
+
+```
+git clone https://github.com/vinay-swamy/clustereval.git
+cd clustereval 
+pip install . 
+```
 
 
 
