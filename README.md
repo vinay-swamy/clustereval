@@ -1,72 +1,39 @@
-# Evaluate Clustering
+# Clustereval: metrics for evaluating graph partitioning algorithmn
 
-Main goal: design a package for evaluating clustering accuracy / identifying optimal clusters, particularly for scRNA-seq
+## Motivation
+Graph partitioning algorithms divide a graph in set of partitions, where partitions are more connected to each other than the rest of the graph. Any tabular data can be converted into a graph via an approximate nearest neighbor(ANN), where observations that are closer to each other in space are connected. The combination of ANN + graph partitioning is an efficient way to partition large datasets. A major step in this process is the choice of the number of nearest neighbors to obtain(k) and hyperparameters for the clustering algorithm. This pacakge aims to assist in the task of choosing the best hyperparameters for this style of clustering methods. 
 
-## Background
+A proposed method for evaluating the results of clustering method is by using perturbation experiments. A data set is clustered to obtain an initial set of labels, then portions of the data are randomly changed, and the data is re-clustered. This perturbation is repeated several times, and the original set of labels are compared to the perturbed sets of labels to see how sensitive the original labels are to small changes in the data. 
 
-Motivation: Different clustering algs/ params produce different clusters, which ones are the best 
+## The Metrics. 
+To facilitate comparisons between sets of labels, this package provides two  metrics Stability and Purity, which are calculated on a per-cluster basis. In general terms, Stability is useful for quantifying how often a given cluster is split into smaller ones. Purity is useful for identifying how often a cluster is merged into another, larger cluster. More formal definitions of the metrics are available here
 
-[Sanes and Regev](https://www.sciencedirect.com/science/article/pii/S0092867416310078?via%3Dihub#app2) define two cluster accuracy metrics Stability and Purity. These are the ones I started with. From some digging through literature, conceptually these metrics are somewhat well established, though the exact implementations vary.
 
-## Roadmap/things to do
+## Example usage
+`Clustereval` provides a simple interface to conduct perturbations in graphs and calculate purity and stability metrics based on those perturbations.
 
-I've impleneted these metrics, and can use them to pick optimal clusters, and have [evaluated the behavior](https://github.com/davemcg/scEiaD/blob/subCellType/analysis/clusterEval_metrix_analysis.ipynb) of these metrics , buuuuuut
-- implementation is ridculously ineffcient(we're talking ~30Hours x 32 cpus x 1000G ram bad for stability)
-- need to tie clustering optimization to some sort of biological function
-- (ideally) need to show theoretical origins of metrics 
-- compare to alternative methods for cluster evaluation
-- need to apply these metrics to multiple datasets, comment about louvain and leiden algs 
+```
+import pandas as pd
+import clustereval as ce
+data = pd.read_csv('clustereval/data/testdata.csv.gz')
+metrics,labels, perturbations = ce.cluster.run_full_experiment(reduction = data, 
+                                         alg = 'louvain', 
+                                         k=30,
+                                         n_perturbations=23,
+                                         edge_permut_frac=.05,
+                                         experiment_name='example'
+                                         )
+metrics
+```
+|   cluster_ids |   stability |   purity | exp_name   |
+|--------------:|------------:|---------:|:-----------|
+|             3 |    0.708558 | 0.53825  | example    |
+|             4 |    0.943322 | 0.666248 | example    |
+|             0 |    0.608236 | 0.991759 | example    |
+|             2 |    1        | 0.972109 | example    |
+|             1 |    1        | 0.944761 | example    |
 
-### Computational Efficiency
-I have standalone implementations of louvain and leiden, neighbor graph via hsnw, perturbations, and local/global pruning implemented in python(thanks to parc), and it's likely to stay in python.
-To remedy metrics ineffiency, I'm, going to re-implement the metric portion in Rust, and provide python bindings to use them. I've got the Stability metric working as a stand alone binary
-TODO:
-- implement multi-threading
-- refactor code into a lib
-- Make python bindings 
-- add tests and setup continuous integration
-    - get some fancy github badges 
-- switch from using Vec<String> to Vec<&str>, will force me to figure out lifetime specifiers 
-- implement purity in Rust
-- distribute pre-compiled binaries via conda/pypi
-- potentially comment on the utility of Rust 
 
-NOTE:
-- current stability calculation could be sped up by creating a diagonal matrix, as we are right now unecesarrily computing about half the calculations, but lets no worry about this until we get everything else running
 
-### Connecting clustering optimization to biological function
 
-Does the optimiatuing clusters even matter within the context of biology?
-- compare DiffExp/somthing else of worst vs best clusters
 
-### Theoretical origins of metrics
-
-Luxburg et al is a whole [book](https://arxiv.org/pdf/1007.1075.pdf) on this topic, and provides a lot of good background on evaluating clustering stability. 
-- define metrics and perturbations within the theorectical context described in Luxburg et al .
-
-#### Stability
-Stability is built upon the shannon diversity index, aka entropy:
- $$ H = -\sum_{k=1}^K prop(k) * ln(prop(k)) $$, where  K is the total number of clusters in an experiment, and prop(k) is the fraction of total observations in cluster k. Stability is then 
-$$ S = 1 -  \frac1N \sum_{I=1}^N\frac{H_i^k}{H_i^{Tot}} $$, where N is the total number of experiments profiled and where H is the shannon diversity index:
-An experiment is one generated clustering profile generated by some combination of clustering algorithmn and clustering parameters.
-Where  $${H_i^{Tot}$$ is the entropy of a given experiment, 
-and H_k is ...
-
-We consider Stability in two (related contexts) - evaluating the results of a grid search across hyper parameters and algorithmn, and evaluating set of pertrubation experiments for a single choice of hyperparameters
-
-Pairwise comparisons across grid search is more about consensus across multiple tools  > more reproducible clusters
-perturbation experiments is more about quality of each run independent of each run, relative to the data > best clusters for data (but maybe  overfitted?)
-
-### Comparison to other methods for cluster evaluation
-
-- [Clustree](https://github.com/lazappi/clustree) - visual based way for picking best clusterins 
-- other [statistical tests ](https://en.wikipedia.org/wiki/Cluster_analysis#Internal_evaluation)for choosing clusters 
-- maybe something about graph-based clustering compared to centroid based clustersing?
-
-### Applications 
-
-Create a sereies of start to finish exampls on:
-- synthetic data. Find some way to simulate clustering data 
-- a small real dataset (4K PBMC's is a good place to start)
-- a large real dataset (Sanes Amacrine dataset)
-- give some advice on choosing the best parameter space to iterate over
