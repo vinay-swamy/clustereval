@@ -83,22 +83,22 @@ prom_clu <- ggplot(prom_df) +
 n=100
 r=16
 example_df <- bind_rows(
-    tibble(x= rnorm(n, 0), y=rnorm(n, r), clustering_1 = 'A'),
-    tibble(x= rnorm(n, r/2), y=rnorm(n, r/2), clustering_1 = 'B'),
-    tibble(x= rnorm(n, r), y=rnorm(n, 0), clustering_1 = 'C'),
-    tibble(x= rnorm(n, r/2), y=rnorm(n, -r/2), clustering_1 = 'D'),
-    tibble(x= rnorm(n, 0), y=rnorm(n, -r), clustering_1 = 'E'),
-    tibble(x= rnorm(n, -r/2), y=rnorm(n, -r/2), clustering_1 = 'F'),
-    tibble(x= rnorm(n, -r), y=rnorm(n, 0), clustering_1 = 'G'),
-    tibble(x= rnorm(n, -r/2), y=rnorm(n, r/2), clustering_1 = 'H'),
-    tibble(x= rnorm(n, 0), y=rnorm(n, 0), clustering_1 = 'I')
+    tibble(x= rnorm(n, 0), y=rnorm(n, r), default_label = 'A'),
+    tibble(x= rnorm(n, r/2), y=rnorm(n, r/2), default_label = 'B'),
+    tibble(x= rnorm(n, r), y=rnorm(n, 0), default_label = 'C'),
+    tibble(x= rnorm(n, r/2), y=rnorm(n, -r/2), default_label = 'D'),
+    tibble(x= rnorm(n, 0), y=rnorm(n, -r), default_label = 'E'),
+    tibble(x= rnorm(n, -r/2), y=rnorm(n, -r/2), default_label = 'F'),
+    tibble(x= rnorm(n, -r), y=rnorm(n, 0), default_label = 'G'),
+    tibble(x= rnorm(n, -r/2), y=rnorm(n, r/2), default_label = 'H'),
+    tibble(x= rnorm(n, 0), y=rnorm(n, 0), default_label = 'I')
 )
 
 
-ggplot(example_df) + 
-    geom_point(aes(x=x, y=y, color = clustering_1)) +
-    theme_minimal()
-
+# ggplot(example_df) + 
+#     geom_point(aes(x=x, y=y, color = clustering_1)) +
+#     theme_minimal()
+write_csv(example_df, 'simulated_clusters.csv.gz')
 ```
 
 
