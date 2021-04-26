@@ -50,11 +50,9 @@ class DuplicateRowError(Exception):
 class ClusterExperiment:
     """This is the main python class to do Nearest Neighbor(NN) graph-based clustering and run perturbation experiments.
     :param data: A numeric Pandas DataFrame to cluster. Theoretically could also be a 2D numpy array, but have not tested
-    :type client: numeric Pandas DataFrame
+    :type data: numeric Pandas DataFrame
     :param knn: The number of nearest neighbors to use for NN graph creation
     :type knn: int
-    :param nthreads: number of threads to use for NN graph creation
-    :type nthreads: int
     """
     def __init__(self, data, verbosity):
         self.data = data
@@ -63,20 +61,24 @@ class ClusterExperiment:
         self.m=SimpleMessager('ClusterExperiment', verbosity)
 
     
-    def buildNeighborGraph(self, knn, nn_space, local_pruning, global_pruning, jac_std_global, dist_std_local, ef_construction=150, nthreads=1):
-        """Build an approximate nearest neighbor graph from input data. Implements local and global edge pruning methods from PARC.
+    def buildNeighborGraph(self, knn, nn_space,  global_pruning_jac_threshold=None, local_pruning_dist_threshold=None, ef_construction=150, nthreads=1):
+        """Build an approximate nearest neighbor graph(NN graph) from input data. Implements local and global edge pruning methods from PARC.
 
-        :param nn_space: distance metric to use for graph creation. one of ['l2', 'ip', 'cosine']
-        :type nn_space: str
-        :param ef_construction: construction time/accuracy trade off. See https://github.com/nmslib/hnswlib/blob/master/ALGO_PARAMS.md
-        :type ef_construction: int
-        :param local_pruning: Run local edge pruning 
-        :type local_pruning: bool
-        :param global_pruning: run global edge pruning
-        :type global_pruning: bool
-        :param jac_std_global: CHANGEME Not totally sure tbh, need to look into it more 
-        :type jac_std_global: str
+        :param knn: Number of nearest neighbors to build NN graph 
+        :type knn: int
+        :param nn_space: distance metric to use for NN graph. One of ['l2', 'cosine', 'ip']
+        :type nn_space: [str]
+        :param global_pruning_jac_threshold: remove jaccard-weighted edges from NN graph below a threshold.Skipped if None, defaults to None
+        :type global_pruning_jac_threshold: [float], [0,1] optional
+        :param local_pruning_dist_threshold: remove edges that are this many standard deviations away from mean distance, for each node. Skipped if None ; defaults to None
+        :type local_pruning_dist_threshold: [float], optional
+        :param ef_construction: tune NN accuracy, defaults to 150
+        :type ef_construction: int, optional
+        :param nthreads: [description], defaults to 1
+        :type nthreads: int, optional
+        :raises DuplicateRowError: [description]
         """        
+           
         self.m.message('Building NN graph', 'DEBUG')
         ef_query = max(100, knn + 1)
         num_dims = self.data.shape[1]
@@ -100,11 +102,12 @@ class ClusterExperiment:
             self.m.message('There are likely duplicate rows in the input data. remove and re-try', 'ERROR')
             raise DuplicateRowError
 
-        if local_pruning:
+        if local_pruning_dist_threshold is not None:
             # for each cell, keep cells that are below dist_std_local standard deviations from mean 
             # for cells above threshold, set to 0. Then, when we select non-zero values from the sparse matrix
             # these pruned values will be dropped
-            row_thresh = np.mean(distance_array, axis=1)  + dist_std_local * np.std(distance_array, axis = 1)
+            row_thresh = np.mean(distance_array, axis=1) + \
+                local_pruning_dist_threshold  * np.std(distance_array, axis=1)
             keep_cells = distance_array < row_thresh[:,None]
             distance_array = np.where(keep_cells, distance_array, 0)
     
@@ -124,14 +127,14 @@ class ClusterExperiment:
         sim_list = nn_graph.similarity_jaccard(pairs=edgelist_copy)
         sim_list_array = np.asarray(sim_list)
 
-        if global_pruning:
+        if global_pruning_jac_threshold is not None:
             # remove edges below an edge weight threshold. Edges betwen poorly connected nodes wil have low edge weight 
             self.m.message('Running Global Edge Pruning', 'DEBUG')
             n_elements = self.data.shape[0]
-            if jac_std_global == 'median':
+            if global_pruning_jac_threshold == 'median':
                 threshold = np.median(sim_list)
             else:
-                threshold = np.mean(sim_list) - jac_std_global * np.std(sim_list)
+                threshold = np.mean(sim_list) - global_pruning_jac_threshold * np.std(sim_list)
             strong_locs = np.where(sim_list_array > threshold)[0]
             new_edgelist = list(edge_list_copy_array[strong_locs])
             sim_list_new = list(sim_list_array[strong_locs])
@@ -146,7 +149,20 @@ class ClusterExperiment:
         return
 
     def runClustering(self, alg, quality_function, cluster_kwargs={}, min_cluster_size=10):
+        """Run a graph partitioning algorithmn on an NN-graph
 
+        :param alg: paritioning algorithmn to use. one of ['louvain', 'leiden']
+        :type alg: str
+        :param quality_function: Quality function for determining graph modularity. 
+        :type quality_function: str
+        :param cluster_kwargs: additional parameters to use for clustering, defaults to {}
+        :type cluster_kwargs: dict, optional
+        :param min_cluster_size: Minimum size for cluster. clusters smaller than this will be merged into next closest cluster, defaults to 10
+        :type min_cluster_size: int, optional
+        :raises NotImplementedError: [description]
+        :return: pandas DataFrame with observation IDs and clsuter assigments
+        :rtype: pandas.DataFrame
+        """
         self.m.message(
             f'Running {alg} clustering using {quality_function} quality function', 'DEBUG')
 
@@ -174,6 +190,15 @@ class ClusterExperiment:
         return pd.DataFrame().assign(Barcode=list(self.data.index), labels=labels).sort_values('labels')
      
     def mergeSingletons(self, labels, small_pop ):
+        """Merge smaller clusters into larger ones 
+
+        :param labels: list of labels to clean
+        :type labels: list
+        :param small_pop: smallest size for clusters 
+        :type small_pop: int
+        :return: list of corrected labels 
+        :rtype: [type]
+        """        
         self.m.message('Merging small clustering', 'DEBUG')
         n_elements = self.data.shape[0]
         
@@ -242,6 +267,27 @@ class ClusterExperiment:
    
     def runUMAP(self, n_components=2, alpha: float = 1.0, negative_sample_rate: int = 5,
                      gamma: float = 1.0, spread=1.0, min_dist=0.1, init_pos='spectral', random_state=1,):
+        """ Perform UMAP dimensionality reduction from constructed NN graph 
+
+        :param n_components: number of dimensions to reduce, defaults to 2
+        :type n_components: int, optional
+        :param alpha: [description], defaults to 1.0
+        :type alpha: float, optional
+        :param negative_sample_rate: [description], defaults to 5
+        :type negative_sample_rate: int, optional
+        :param gamma: [description], defaults to 1.0
+        :type gamma: float, optional
+        :param spread: [description], defaults to 1.0
+        :type spread: float, optional
+        :param min_dist: [description], defaults to 0.1
+        :type min_dist: float, optional
+        :param init_pos: [description], defaults to 'spectral'
+        :type init_pos: str, optional
+        :param random_state: [description], defaults to 1
+        :type random_state: int, optional
+        :return: [description]
+        :rtype: [type]
+        """        
         ## pre-process data for umap
         n_neighbors = self.nn_neighbor_array.shape[1]
         n_cells = self.nn_neighbor_array.shape[0]
@@ -282,6 +328,28 @@ class ClusterExperiment:
         #return 
 
     def runPerturbations(self, alg, quality_function, n_perturbations,cluster_kwargs={},  edge_permut_frac=None, weight_permut_range=None, min_cluster_size=10, verbosity=1):
+        """run multiple perturbation experiments on NN graph 
+
+        :param alg: algorithmn to re-cluster with 
+        :type alg: str
+        :param quality_function: quality function to use for clustering 
+        :type quality_function: str
+        :param n_perturbations: Number of perturbation experiments to run
+        :type n_perturbations: int
+        :param cluster_kwargs: additional parameters for clustering algorithmn, defaults to {}
+        :type cluster_kwargs: dict, optional
+        :param edge_permut_frac: fraction of edges to randomly remove and add
+        :type edge_permut_frac: float
+        :param weight_permut_range: range to uniformly sample from to permute edge weights
+        :type weight_permut_range: [type]
+        :param small_pop: smallest size for clusters 
+        :type small_pop: int
+        :param verbosity: how much to print, defaults to 1
+        :type verbosity: int, optional
+        :return: [description]
+        :rtype: [type]
+        """        
+        
         out_labels = [None] * n_perturbations
         for i in range(n_perturbations):
             perturbed_clu = copy.deepcopy(self)
@@ -292,18 +360,49 @@ class ClusterExperiment:
         return out_labels
     
     
+def run_full_experiment(reduction, alg='louvain', k=30, global_pruning_jac_threshold=None, local_pruning_dist_threshold=None, quality_function='RBConfigurationVertexPartition', cluster_kwargs={}, n_perturbations=0, edge_permut_frac=None, weight_permut_range=None,  min_cluster_size=10, experiment_name='clusterEval', verbosity=0):
+    """[summary]
 
-def run_full_experiment(reduction, alg='louvain', k=30, local_pruning=False, global_pruning=False, quality_function='RBConfigurationVertexPartition', cluster_kwargs={}, n_perturbations=0, edge_permut_frac=None, weight_permut_range=None,  min_cluster_size=10, experiment_name = 'clusterEval', verbosity=1):
+    :param reduction: A numeric Pandas DataFrame to cluster. Theoretically could also be a 2D numpy array, but have not tested
+    :type reduction: [type]
+    :param alg: paritioning algorithmn to use. one of ['louvain', 'leiden']
+    :type alg: str
+    :param k: Number of nearest neighbors to build NN graph, defaults to 30
+    :type k: int
+    :param global_pruning_jac_threshold: [description], defaults to None
+    :type global_pruning_jac_threshold: [type], optional
+    :param local_pruning_dist_threshold: [description], defaults to None
+    :type local_pruning_dist_threshold: [type], optional
+    :param quality_function: quality function to use for clustering 
+    :type quality_function: str
+    :param cluster_kwargs: additional parameters for clustering algorithmn, defaults to {}
+    :type cluster_kwargs: dict, optional
+    :param n_perturbations: Number of perturbation experiments to run
+    :type n_perturbations: int
+    :param edge_permut_frac: fraction of edges to randomly remove and add
+    :type edge_permut_frac: float
+    :param weight_permut_range: range to uniformly sample from to permute edge weights
+    :type weight_permut_range: [type]    
+    :param min_cluster_size: [description], defaults to 10
+    :type min_cluster_size: int, optional
+    :param experiment_name: Name of the experiment. 'auto' to auto generate based on input parameters , defaults to 'auto'
+    :type experiment_name: str, optional
+    :param verbosity: [description], defaults to 0
+    :type verbosity: int, optional
+    :return: [description]
+    :rtype: [type]
+    """    
     
-    
+    if experiment_name == 'auto':
+        experiment_name = f'knn-{k}_alg-{alg}_localPruningDist-{local_pruning_dist_threshold}_globalPruningJac-{global_pruning_jac_threshold}_nPerturbations-{n_perturbations}_edgePermutFrac-{edge_permut_frac}_weightPermuteRange-{weight_permut_range}_minCluster=Size-{min_cluster_size}'
+
     clu_obj = ClusterExperiment(data=reduction, 
                                 verbosity=verbosity)
     clu_obj.buildNeighborGraph(knn=k, 
                                nn_space='l2', 
-                               local_pruning=local_pruning, 
-                               global_pruning=global_pruning, 
-                               jac_std_global='median', 
-                               dist_std_local = 3)
+                               global_pruning_jac_threshold=global_pruning_jac_threshold,
+                               local_pruning_dist_threshold=local_pruning_dist_threshold
+    )
 
     labels = clu_obj.runClustering(alg=alg, 
                                    quality_function=quality_function, 

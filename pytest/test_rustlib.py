@@ -9,8 +9,8 @@ def clus():
     metrics, ref_labels, perturbations = ce.cluster.run_full_experiment(reduction=data,
                                           alg='louvain',
                                           k=30,
-                                          local_pruning=False,
-                                          global_pruning=False,
+                                          global_pruning_jac_threshold=None,
+                                          local_pruning_dist_threshold=None,
                                           quality_function='RBConfigurationVertexPartition',
                                           cluster_kwargs={},
                                           n_perturbations=5,
@@ -47,8 +47,8 @@ def test_singleway_metric_calc_int_df(clus, py_stability, py_purity):
         ref_clu,  clus[1:], 'test')
     comp = k.merge(py_stability).merge(py_purity)
     print(comp)
-    assert sum( comp['stability'] - comp['H_k_scores'] ) ==0
-    assert sum( comp['purity'] - comp['py_purity']) ==0
+    assert abs(sum(comp['stability'] - comp['H_k_scores'] )) <1e-15
+    assert abs(sum(comp['purity'] - comp['py_purity'])) < 1e-15
     return
 
 
@@ -62,8 +62,8 @@ def test_singleway_metric_calc_string_df(clus, py_stability, py_purity):
         ref_clu, clus, 'test').assign(cluster_ids = lambda x: x.labels.astype(int))
     comp = k.merge(py_stability).merge(py_purity)
     print(comp)
-    assert sum(comp['stability'] - comp['H_k_scores']) == 0
-    assert sum(comp['purity'] - comp['py_purity']) == 0
+    assert abs(sum(comp['stability'] - comp['H_k_scores'])) < 1e-15
+    assert abs(sum(comp['purity'] - comp['py_purity'])) < 1e-15
     return
 
 
