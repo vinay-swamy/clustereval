@@ -1,17 +1,19 @@
 import numpy as np
 
-RES_RANGE= [.2, .4, .6, .8, 1.0,  1.2,  1.4, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0]
+
 rule all:
     input:
-        clustering = expand('cluster_out/ds-{countMat}_alg-{alg}_knn-{k}_.csv.gz', k=list(range(4,101,2)),
-                                countMat = ['sanes_amacrine','pbmc'], alg = ['louvain', 'leiden']),
-        metrics = expand('cluster_metrics/ds-{countMat}_alg-{alg}_knn-{k}_.csv.gz', k=list(range(4,101,2)),
-                                countMat = ['sanes_amacrine','pbmc'], alg = ['louvain', 'leiden'])
+        clustering = expand('cluster_out/ds-{countMat}_alg-{alg}_knn-{k}_.csv.gz', k=list(range(5,101,5)),
+                                countMat = ['sanes_amacrine','pbmc', 'pbmc_sim_20groups-V1', 'pbmc_sim_10groups-V1'], 
+                                alg = ['louvain', 'leiden']),
+        metrics = expand('cluster_metrics/ds-{countMat}_alg-{alg}_knn-{k}_.csv.gz', k=list(range(5,101,5)),
+                                countMat = ['sanes_amacrine','pbmc'], 
+                                alg = ['louvain', 'leiden'])
 
 rule make_count_matrices:
     output:
-        'data/sanes_amacrine_preproccessed.csv.gz',
-        'data/pbmc_preproccessed.csv.gz',
+        'data/count_mats/sanes_amacrine_preproccessed.csv.gz',
+        'data/count_mats/pbmc_preproccessed.csv.gz',
     shell:
         '''
 
@@ -29,42 +31,25 @@ rule make_count_matrices:
 
 rule run_parameter_exp_clustering:
     input: 
-        mat = 'data/{countMat}_preproccessed.csv.gz'
+        mat = 'data/count_mats/{countMat}_preproccessed.csv.gz'
     output:
         clustering = 'cluster_out/ds-{countMat}_alg-{alg}_knn-{k}_.csv.gz',
         metrics = 'cluster_metrics/ds-{countMat}_alg-{alg}_knn-{k}_.csv.gz'
 
     run:
         import clustereval as ce
-        import numpy as np 
-        import pandas as pd
-        import leidenalg 
-        import louvain 
-
-        reduction = pd.read_csv(input.mat, index_col=0)
-        clu_obj = ce.cluster.ClusterExperiment(reduction, 0)
-        clu_obj.buildNeighborGraph(int(wildcards.k), 'l2', 150, False, False, None, None)
-        if wildcards.alg == 'louvain':
-            labels = clu_obj.run_louvain(
-                vertex_partition_method=louvain.RBConfigurationVertexPartition,
-                resolution=1.0,
-                jac_weighted_edges='weight'
-            )
-        elif wildcards.alg == 'leiden':
-            labels = clu_obj.run_leiden(
-                vertex_partition_method=leidenalg.RBConfigurationVertexPartition,
-                resolution = 1.0,
-                n_iter=5,
-                jac_weighted_edges='weight'
-            )
+        import pandas as pd 
         
-        labels_clean = clu_obj.merge_singletons(labels, 50)
-        ref_labels = pd.DataFrame().assign(Barcode = list(reduction.index), labels = labels_clean).sort_values('labels')
-        ref_labels.to_csv(output.clustering)
-
-        perturbed_labels = ce.cluster.run_perturbations(clu_obj, 1 , wildcards.alg, 50, .05, None, 50, 0)
+        metrics,labels, perturbations = ce.cluster.run_full_experiment(reduction = pd.read_csv(input.mat), 
+                                         alg = wildcards.alg, 
+                                         k=int(wildcards.k),
+                                         n_perturbations=100,
+                                         edge_permut_frac=.05,
+                                         min_cluster_size=25,
+                                         experiment_name=f'experiment2-{wildcards.countMat}-{str(wildcards.k)}-{wildcards.alg}'
+                                         )
         
-        metrics = ce.metrics.calculate_metrics(ref_labels, perturbed_labels)
+        labels.to_csv(output.clustering)
         metrics.to_csv(output.metrics)
 
 
