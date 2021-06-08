@@ -80,6 +80,7 @@ class ClusterExperiment:
         """        
            
         self.m.message('Building NN graph', 'DEBUG')
+        self.knn=knn
         ef_query = max(100, knn + 1)
         num_dims = self.data.shape[1]
         n_elements = self.data.shape[0]
@@ -187,7 +188,7 @@ class ClusterExperiment:
         if min_cluster_size > 1:
             labels = self.mergeSingletons(labels, min_cluster_size)
 
-        return pd.DataFrame().assign(Barcode=list(self.data.index), labels=labels).sort_values('labels')
+        return pd.DataFrame().assign(Barcode=list(self.data.index), labels=labels, knn=self.knn).sort_values('labels')
      
     def mergeSingletons(self, labels, small_pop ):
         """Merge smaller clusters into larger ones 

@@ -4,7 +4,7 @@ import numpy as np
 
 class MissingInputError(Exception):
     pass
-def calculate_metrics(ref_label, query_labels, experiment_name='clusterEval'):
+def calculate_metrics(ref_label, query_labels, experiment_name='clusterEval', knn=-1):
     """calculate Stability and Purity for sets of custering label
 
     :param ref_label: A set of reference labels, for which metrics can be calculate. must be a pandas DataFrame, where column one is sample labels, and column2 is cluster labels. MUST BE SORTED BY SECOND COLUMN
@@ -53,7 +53,8 @@ def calculate_metrics(ref_label, query_labels, experiment_name='clusterEval'):
         exp_results = pd.DataFrame().assign(cluster_ids = er_class.cluster_ids, 
                                             stability = er_class.stability_scores,
                                             purity = er_class.purity_scores,
-                                            exp_name = er_class.exp_param)
+                                            exp_name = er_class.exp_param, 
+                                            knn = knn)
         if label_converted:
 
             exp_results =  exp_results.rename(columns = {'cluster_ids':'new_lab'}).merge(converter_df, how = 'inner').drop(columns = ['new_lab']).rename({'labels':old_label_col})
