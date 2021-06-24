@@ -15,8 +15,8 @@ def calculate_metrics(ref_label, query_labels, experiment_name='clusterEval', kn
     :type experiment_name: str
     """ 
     if type(ref_label) == type(pd.DataFrame()):
-        if ref_label.shape[1] > 2:
-            print('DF longer than 2: extra columns will be ignored')
+        # if ref_label.shape[1] > 2:
+        #     print('DF longer than 2: extra columns will be ignored')
 
         ref_label = ref_label.iloc[:, :2]
         old_label_col = ref_label.columns[1]

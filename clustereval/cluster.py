@@ -418,7 +418,7 @@ def run_full_experiment(reduction, alg='louvain', k=30, global_pruning_jac_thres
                                                  weight_permut_range=weight_permut_range, 
                                                  min_cluster_size=min_cluster_size, 
                                                  verbosity=verbosity)
-        metrics = calculate_metrics(labels, perturbations,experiment_name)
+        metrics = calculate_metrics(labels, perturbations,experiment_name, k)
         return (metrics,labels, perturbations )
     else:
         return labels 
