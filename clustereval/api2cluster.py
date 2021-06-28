@@ -54,11 +54,12 @@ class ClusterExperiment:
     :param knn: The number of nearest neighbors to use for NN graph creation
     :type knn: int
     """
-    def __init__(self, data, verbosity):
+    def __init__(self, data, verbosity, global_random_seed=99):
         self.data = data
         self.time_smallpop = 15
         self.step=0
         self.m=SimpleMessager('ClusterExperiment', verbosity)
+        self.GR_seed = global_random_seed
 
     
     def buildNeighborArray(self, max_knn, nn_space,  ef_construction=150, nthreads=1):
@@ -89,9 +90,9 @@ class ClusterExperiment:
 
         if (num_dims > 30) & (n_elements <= 50000):
             p.init_index(max_elements=n_elements, ef_construction=ef_construction,
-                             M=48)  # good for scRNA seq where dimensionality is high
+                             M=48, random_seed = self.GR_seed)  # good for scRNA seq where dimensionality is high
         else:
-            p.init_index(max_elements=n_elements, ef_construction=ef_construction, M=24 )
+            p.init_index(max_elements=n_elements, ef_construction=ef_construction, M=24, random_seed = self.GR_seed )
         
         p.add_items(self.data)
         p.set_ef(ef_query)
@@ -188,6 +189,7 @@ class ClusterExperiment:
             graph = self.nn_graph,
             partition_type=Q,
             weights='weight',
+            seed = self.GR_seed,
             **cluster_kwargs
         )
         labels = np.asarray(partition.membership)

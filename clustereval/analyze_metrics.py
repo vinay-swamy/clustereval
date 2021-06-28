@@ -43,11 +43,12 @@ def strategy_1_recluster(all_permute_metrics, all_labels, stability_threshold=.8
     target_sets =  metric_summary.drop_duplicates('n_pass_metrics').iloc[:max_sets_to_match,:].reset_index(drop=False)
     match_results= []
     for index, row in target_sets.iterrows():
-        n_clusters_pass = row['n_pass_metrics']
-        n_clusters_total = row['nclusters'] 
+        n_clusters_pass = int(row['n_pass_metrics'])
+        n_clusters_total = int(row['nclusters'])
         query_knn = int(row['knn'])
         c_set_passing_clusters = all_permute_metrics[all_permute_metrics['nCluPass_both']].query('knn == @query_knn')['cluster_ids'].sort_values().to_numpy()
         sets_match_passing_clusters=(metric_summary
+        
         .query('n_pass_metrics == @n_clusters_pass')
         .assign(delta_pass_clusters = lambda x: abs(x['nclusters'] - n_clusters_total),
                 delta_knn = lambda x: query_knn - x['knn'])
@@ -67,9 +68,10 @@ def strategy_1_recluster(all_permute_metrics, all_labels, stability_threshold=.8
             match_results.append((query_knn, matched_set_knn, avg_cluster_overlap, final_mapping) )
     match_results.sort(key = operator.itemgetter(2), reverse=True)
     print(f"Number of Matches: {str(len(match_results))}")
+    if 
     
     results_to_recluster=[]
-    for mapping in match_results[:max_results_to_eval]:
+    for mapping in match_results:
         query_knn = int(mapping[0])
         target_knn = int(mapping[1])
         major_k = f'knn_{str(query_knn)}'
@@ -81,5 +83,7 @@ def strategy_1_recluster(all_permute_metrics, all_labels, stability_threshold=.8
             res += t_labels[(t_labels[major_k] == i) & (t_labels[minor_k] == j )]['Barcode'].to_list()
         
         labels_to_recluster = t_labels[~t_labels.Barcode.isin(res)]
-        results_to_recluster.append((query_knn, target_knn, mapping_result, labels_to_recluster ))
+        labels_to_keep = t_labels[t_labels.Barcode.isin(res)][['Barcode', major_k]]
+        results_to_recluster.append((query_knn, target_knn, mapping_result, labels_to_recluster,labels_to_keep ))
+    results_to_recluster.sort(key = lambda x: x[3].shape[0])
     return results_to_recluster
